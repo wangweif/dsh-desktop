@@ -37,6 +37,7 @@ import {
 import {
   demoteMarketGeneration,
   ensureMarketBaseline,
+  markMarketRemoved,
   marketUsableWithoutBaseline,
   readProfileMarket
 } from './state/market-baseline'
@@ -572,12 +573,12 @@ function attachWindowsMenuView(window: BrowserWindow): void {
 
 function configureAppIdentity(): void {
   if (developmentBuild) {
-    app.setName('DSH Desktop Dev')
+    app.setName('农科小智智能体 Dev')
     app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop-dev'))
     return
   }
 
-  app.setName('DSH Desktop')
+  app.setName('农科小智智能体')
   // Keep the historical lowercase directory stable across product-name and
   // branding changes. Harness stores workspaces, sessions, credentials, and
   // custom presets below userData, so deriving this path from app.getName()
@@ -1025,10 +1026,10 @@ function ensureTray(): void {
 
   const locale = harnessLocale()
   tray = new Tray(desktopIconPath())
-  tray.setToolTip('DSH Desktop')
+  tray.setToolTip('农科小智智能体')
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: locale === 'zh' ? '显示 DSH Desktop' : 'Show DSH Desktop', click: restoreMainWindow },
+      { label: locale === 'zh' ? '显示农科小智智能体' : 'Show 农科小智智能体', click: restoreMainWindow },
       { type: 'separator' },
       { label: locale === 'zh' ? '退出' : 'Exit', click: () => app.quit() }
     ])
@@ -1361,7 +1362,7 @@ async function quarantineInstalledLaunchAgentsForUpdate(dshHome: string): Promis
   }
   if (result.failures.length > 0) {
     for (const failure of result.failures) runtime.note(`[desktop] pre-update launch agent: ${failure}`)
-    throw new Error('Unable to stop background services before replacing DSH Desktop.')
+    throw new Error('Unable to stop background services before replacing 农科小智智能体.')
   }
 }
 
@@ -1710,9 +1711,9 @@ async function removeMarket(dshHome: string): Promise<{ ok: boolean; detail?: st
   // answered any more, and a generation whose disable failed must not be
   // reported as an uninstall that worked.
   const projected = await isProjectedGenerationPlugin(dshHome, 'dshmarket')
-  return projected
-    ? disableMarketGeneration(dshHome)
-    : removeProfilePluginWithDsh(
+  const result = projected
+    ? await disableMarketGeneration(dshHome)
+    : await removeProfilePluginWithDsh(
       {
         dshHome,
         dshEntryPath: dshEntryPath(),
@@ -1723,6 +1724,10 @@ async function removeMarket(dshHome: string): Promise<{ ok: boolean; detail?: st
       'dshmarket',
       true
     )
+  // Record the explicit uninstall so the default install does not bring the
+  // market back on the next launch.
+  if (result.ok) await markMarketRemoved(dshHome)
+  return result
 }
 
 /**
@@ -1769,7 +1774,7 @@ function registerHarnessHandlers(): void {
   ipcMain.removeHandler('harness:restart')
   ipcMain.handle('harness:restart', async (event) => {
     if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
-      throw new Error('Harness restart is only available from the DSH Desktop window.')
+      throw new Error('Harness restart is only available from the 农科小智智能体 window.')
     }
     if (runtime.snapshot().phase !== 'ready') {
       throw new Error('Harness is not ready to restart.')
@@ -1792,7 +1797,7 @@ function registerHarnessHandlers(): void {
   ipcMain.handle('desktop-menu:execute', async (event, command: unknown) => {
     assertTrustedDesktopMenuEvent(event)
     if (!isDesktopMenuCommand(command)) {
-      throw new Error('Unknown DSH Desktop menu command.')
+      throw new Error('Unknown 农科小智智能体 menu command.')
     }
     const zoomFactor = await executeDesktopMenuCommand(command)
     return zoomFactor === undefined ? { ok: true } : { ok: true, zoomFactor }
@@ -1825,7 +1830,7 @@ function registerHarnessHandlers(): void {
   ipcMain.handle('desktop-titlebar:set-theme', (event, isDark: unknown) => {
     assertTrustedMainWindowEvent(event)
     if (typeof isDark !== 'boolean') {
-      throw new Error('The DSH Desktop titlebar theme must be a boolean.')
+      throw new Error('The 农科小智智能体 titlebar theme must be a boolean.')
     }
     if (process.platform === 'win32' && mainWindow) {
       applyWindowChromeTheme(mainWindow, isDark)
@@ -1858,7 +1863,7 @@ function assertTrustedDesktopMenuEvent(event: IpcMainInvokeEvent): void {
     event.sender === windowsMenuView.webContents &&
     event.senderFrame === windowsMenuView.webContents.mainFrame
   if (!fromMainWindow && !fromWindowsMenu) {
-    throw new Error('This action is only available from the DSH Desktop window.')
+    throw new Error('This action is only available from the 农科小智智能体 window.')
   }
 }
 
@@ -1880,7 +1885,7 @@ function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent): void {
     event.sender !== mainWindow.webContents ||
     event.senderFrame !== mainWindow.webContents.mainFrame
   ) {
-    throw new Error('This action is only available from the main DSH Desktop window.')
+    throw new Error('This action is only available from the main 农科小智智能体 window.')
   }
 }
 
@@ -1915,8 +1920,8 @@ async function showAbout(window: BrowserWindow): Promise<void> {
   const checkForUpdatesLabel = locale === 'zh' ? '检查更新' : 'Check for Updates'
   const result = await dialog.showMessageBox(window, {
     type: 'info',
-    title: 'DSH Desktop',
-    message: locale === 'zh' ? '关于 DSH Desktop' : 'About DSH Desktop',
+    title: '农科小智智能体',
+    message: locale === 'zh' ? '关于农科小智智能体' : 'About 农科小智智能体',
     detail: aboutDetail(
       app.getVersion(),
       bundledHarnessVersion(app.getAppPath()),
@@ -2066,7 +2071,7 @@ async function waitForPluginRecoveryAction(options: {
 
 function showUnexpectedError(error: unknown): void {
   const message = error instanceof Error ? error.stack ?? error.message : String(error)
-  dialog.showErrorBox('DSH Desktop encountered an error', message)
+  dialog.showErrorBox('农科小智智能体 encountered an error', message)
 }
 
 async function showPluginRecovery(options?: {
@@ -3168,7 +3173,7 @@ function installMenu(): void {
           label: app.name,
           submenu: [
             {
-              label: isChinese ? '关于 DSH Desktop' : 'About DSH Desktop',
+              label: isChinese ? '关于农科小智智能体' : 'About 农科小智智能体',
               click: () => {
                 if (mainWindow && !mainWindow.isDestroyed()) {
                   void showAbout(mainWindow).catch(showUnexpectedError)
@@ -3276,7 +3281,7 @@ async function showMobilePairing(): Promise<void> {
     const options: MessageBoxOptions = {
       type: 'info',
       message: 'Harness is still starting.',
-      detail: 'Wait until DSH Desktop is ready, then connect your phone again.',
+      detail: 'Wait until 农科小智智能体 is ready, then connect your phone again.',
       buttons: ['OK']
     }
     await (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options))

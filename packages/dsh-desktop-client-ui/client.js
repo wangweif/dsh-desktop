@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 
     const React = require('react')
-    const { BrandWordmark, FishLogo } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { FishLogo } = require('@deepseek-ai/dsh-client-ui-primitives')
 
     // Tight bounds of the mark inside its 1000x1000 source artwork.
     const BRAND_MARK_VIEWBOX = { x: 42, y: 218, width: 898, height: 564 }
@@ -29,8 +29,11 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // Rebranded product name shown next to the whale mark in the sidebar.
+    // Plain text inside the sidebar's .brandName span (18px/600), replacing
+    // the stock "DeepSeek Harness" letterform artwork.
     function DesktopBrandName() {
-      return React.createElement(BrandWordmark, { includeMark: false })
+      return React.createElement('span', null, '农科小智智能体')
     }
 
     function ConversationBrandMark(props) {

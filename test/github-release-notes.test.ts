@@ -22,7 +22,7 @@ async function work(): Promise<string> {
 
 const run = (args: string[]) => execFile('python3', [script, ...args], { cwd: projectRoot, timeout: 20_000 })
 
-const VALID = `# DSH Desktop v9.9.9 — 测试主题
+const VALID = `# 农科小智智能体 v9.9.9 — 测试主题
 
 ## 更新内容
 
@@ -46,7 +46,7 @@ describe('github_release_notes build-prompt', () => {
     for (const tag of ['<commit-details>', '<diff-statistics>', '<code-diff>', '<style-reference>']) {
       expect(prompt).toContain(tag)
     }
-    expect(prompt).toContain('# DSH Desktop v9.9.9 — ')
+    expect(prompt).toContain('# 农科小智智能体 v9.9.9 — ')
     expect(prompt).toContain('## 更新内容')
     expect(prompt).toContain('## 问题修复')
     expect(prompt).toContain('## 升级说明')
@@ -65,12 +65,12 @@ describe('github_release_notes validate', () => {
   it('rejects a wrong title prefix, a stray H2, a link, an empty file, and shell-only notes', async () => {
     const dir = await work()
     const cases: Record<string, string> = {
-      'bad-title.md': VALID.replace('# DSH Desktop v9.9.9 — 测试主题', '# Something else'),
+      'bad-title.md': VALID.replace('# 农科小智智能体 v9.9.9 — 测试主题', '# Something else'),
       'stray-h2.md': `${VALID}\n## 内部重构\n\n- x\n`,
       'link.md': VALID.replace('一条面向用户的改进。', '见 https://github.com/x/y/pull/1'),
       'empty.md': '',
-      'title-only-shell.md': '# DSH Desktop v9.9.9 — 版本更新\n',
-      'no-h2.md': '# DSH Desktop v9.9.9 — 测试主题\n\n- 仅有正文无分类标题\n'
+      'title-only-shell.md': '# 农科小智智能体 v9.9.9 — 版本更新\n',
+      'no-h2.md': '# 农科小智智能体 v9.9.9 — 测试主题\n\n- 仅有正文无分类标题\n'
     }
     for (const [name, body] of Object.entries(cases)) {
       const file = path.join(dir, name)
@@ -86,7 +86,7 @@ describe('github_release_notes generate-fallback', () => {
     const file = path.join(dir, 'fb.md')
     await run(['generate-fallback', '--tag', 'v9.9.9', '--output', file])
     const body = await readFile(file, 'utf8')
-    expect(body.startsWith('# DSH Desktop v9.9.9 — ')).toBe(true)
+    expect(body.startsWith('# 农科小智智能体 v9.9.9 — ')).toBe(true)
     // A fixes-only branch legitimately emits 问题修复 without 更新内容.
     expect(body).toMatch(/^## (更新内容|问题修复)$/m)
     await expect(run(['validate', '--tag', 'v9.9.9', '--input', file])).resolves.toBeDefined()

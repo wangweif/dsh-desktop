@@ -43,14 +43,37 @@ function replaceIconLink(contents, file) {
 }
 
 /**
- * Point the web manifest's icon at the desktop logo.
+ * Swap the frontend's HTML title for the desktop brand name.
+ *
+ * Matched rather than pinned so either language or quoting style survives;
+ * a frontend that stopped declaring exactly one title is a change worth
+ * failing on, not one to paper over.
+ * @param contents - index.html source.
+ * @param file - path shown in the failure message.
+ * @returns index.html with the desktop title.
+ */
+function replaceTitle(contents, file) {
+  const title = '<title>农科小智智能体</title>'
+  if (contents.includes(title)) return contents
+  const matches = contents.match(/<title>[^<]*<\/title>/gu) ?? []
+  if (matches.length !== 1) {
+    throw new Error(
+      `Could not update DSH Desktop branding in ${file}: expected one title tag, found ${String(matches.length)}`
+    )
+  }
+  return contents.replace(matches[0], title)
+}
+
+/**
+ * Point the web manifest's icon at the desktop logo and carry the desktop
+ * product name.
  *
  * Edited as JSON rather than as text: upstream added `"purpose": "any"` to the
  * entry in 0.1.2-alpha.1, which a pinned multi-line string could not survive,
  * and key order is not a contract. The entry still has to exist.
  * @param contents - manifest source.
  * @param file - path shown in the failure message.
- * @returns manifest JSON with the desktop icon.
+ * @returns manifest JSON with the desktop icon and name.
  */
 function replaceManifestIcon(contents, file) {
   const manifest = JSON.parse(contents)
@@ -63,6 +86,8 @@ function replaceManifestIcon(contents, file) {
   target.src = '/dsh-desktop-logo.png'
   target.sizes = '1254x1254'
   target.type = 'image/png'
+  manifest.name = '农科小智智能体'
+  manifest.short_name = '农科小智'
   return `${JSON.stringify(manifest, null, 2)}\n`
 }
 
@@ -72,7 +97,7 @@ await copyFile(lightSource, lightDestination)
 await copyFile(darkSource, darkDestination)
 
 const index = await readFile(indexPath, 'utf8')
-await writeFile(indexPath, replaceIconLink(index, path.relative(projectRoot, indexPath)))
+await writeFile(indexPath, replaceTitle(replaceIconLink(index, path.relative(projectRoot, indexPath)), path.relative(projectRoot, indexPath)))
 
 const manifest = await readFile(manifestPath, 'utf8')
 await writeFile(

@@ -1,4 +1,4 @@
-import { lstat, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises'
+import { access, lstat, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { healProfilesModuleFallback, resolveBundleDir } from '@deepseek-ai/dsh-app-boot'
 import { listGenerations, readDesired, writeDesired } from 'dsh-desktop-market-installer/generations/registry'
@@ -203,8 +203,30 @@ export async function ensureMarketBaseline(
     dependencies?: Record<string, string>
     dsh?: { profile?: { bundles?: string[] } }
   }
-  // A removed/disabled market stays removed. First-install UI owns adding it.
-  if (!manifest.dependencies?.dshmarket || !manifest.dsh?.profile?.bundles?.includes('dshmarket')) return
+  const declaredDependency = manifest.dependencies?.dshmarket !== undefined
+  const declaredBundle = manifest.dsh?.profile?.bundles?.includes('dshmarket') === true
+  let defaultInstall = false
+  if (!declaredDependency && !declaredBundle) {
+    // Default install: a profile that never declared the market gets one on
+    // boot, unless the user removed it (the marker below). A fresh first boot
+    // creates the profile after this step, so the install lands on the next
+    // launch. A removal marker keeps an explicit uninstall final.
+    const removed = await access(marketRemovalMarkerPath(options.dshHome)).then(() => true, () => false)
+    if (removed) return
+    manifest.dependencies ??= {}
+    manifest.dependencies.dshmarket = `^${VERIFIED_MARKET_BASELINE}`
+    manifest.dsh ??= {}
+    manifest.dsh.profile ??= {}
+    manifest.dsh.profile.bundles ??= []
+    manifest.dsh.profile.bundles.push('dshmarket')
+    await writeFile(profilePackageJsonPath(options.dshHome), `${JSON.stringify(manifest, undefined, 2)}\n`, 'utf8')
+    defaultInstall = true
+    options.note?.('[market-baseline] no plugin market declared; installing the default market')
+  } else if (!declaredDependency || !declaredBundle) {
+    // A partially declared market stays as it is; the explicit install and
+    // repair flows own resolving that state.
+    return
+  }
 
   const meetsBaseline = (version: string | undefined): boolean =>
     !!version && !!parseSemver(version) && compareSemver(version, VERIFIED_MARKET_BASELINE) >= 0
@@ -231,8 +253,10 @@ export async function ensureMarketBaseline(
   }
 
   // The installer pins and verifies an exact version, so a declared range
-  // (`^0.5.0`) is reduced to the version it names.
-  const declaredClean = manifest.dependencies.dshmarket.replace(/^[~^v=><\s]+/g, '')
+  // (`^0.5.0`) is reduced to the version it names. A default install just
+  // wrote its own range, so this is always defined past the branch above.
+  const declaredRange = manifest.dependencies?.dshmarket ?? `^${VERIFIED_MARKET_BASELINE}`
+  const declaredClean = declaredRange.replace(/^[~^v=><\s]+/g, '')
   // A partial install may already expose a newer version. Finish that install
   // rather than downgrade it merely because the previous manifest was restored.
   const targetVersion = [VERIFIED_MARKET_BASELINE, declaredClean, installed]
@@ -259,15 +283,41 @@ export async function ensureMarketBaseline(
     home: options.dshHome
   })
   await clearProfileInstallMarker(options.dshHome)
+  // A failed default install must never cost the user their boot: roll the
+  // declaration back, leave the retry to the next launch, and stay quiet. A
+  // declared market that fails to repair keeps blocking (the existing
+  // recovery contract), because that profile booted with the market before.
+  const revertDefaultInstall = async (reason: string): Promise<void> => {
+    await writeFile(profilePackageJsonPath(options.dshHome), raw, 'utf8')
+    options.note?.(`[market-baseline] default market install deferred to the next launch: ${reason}`)
+  }
   const result = await upgrade({ ...options, targetVersion })
-  if (!result.ok) throw new Error(result.detail ?? 'dshmarket installation failed')
+  if (!result.ok) {
+    if (defaultInstall) return revertDefaultInstall(result.detail ?? 'dshmarket installation failed')
+    throw new Error(result.detail ?? 'dshmarket installation failed')
+  }
 
   const actual = await readInstalledPluginVersion(options.dshHome, 'dshmarket')
   if (!meetsBaseline(actual)) {
-    throw new Error(`dshmarket installation reported success, but the active version is ${actual ?? 'missing'}; requires >=${VERIFIED_MARKET_BASELINE}`)
+    const reason = `dshmarket installation reported success, but the active version is ${actual ?? 'missing'}; requires >=${VERIFIED_MARKET_BASELINE}`
+    if (defaultInstall) return revertDefaultInstall(reason)
+    throw new Error(reason)
   }
   options.note?.(`[market-baseline] verified active dshmarket ${actual}`)
   await noteShadowedMarket(installAnchor, profileDir, options.note)
+}
+
+/** Where the explicit-uninstall marker lives, next to the profile tree. */
+export function marketRemovalMarkerPath(dshHome: string): string {
+  return join(dshHome, 'market-removed')
+}
+
+/**
+ * Record the user's explicit market uninstall so the default install never
+ * resurrects what the user chose to remove.
+ */
+export async function markMarketRemoved(dshHome: string): Promise<void> {
+  await writeFile(marketRemovalMarkerPath(dshHome), `${new Date().toISOString()}\n`, 'utf8')
 }
 
 /**

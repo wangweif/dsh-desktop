@@ -23,11 +23,11 @@ ITEM_PATTERN = re.compile(r"^\s*-\s+.+$", re.MULTILINE)
 
 
 def title_prefix(tag: str) -> str:
-    return f"# DSH Desktop {tag} — "
+    return f"# 农科小智智能体 {tag} — "
 
 
 PROMPT_TEMPLATE = """\
-你是 DSH Desktop 的发布说明编辑。你的任务是基于下面的代码改动证据，产出全面、详尽、面向用户的中文 GitHub Release Note（Markdown）。
+你是 农科小智智能体 的发布说明编辑。你的任务是基于下面的代码改动证据，产出全面、详尽、面向用户的中文 GitHub Release Note（Markdown）。
 
 飞书通知关注简短摘要，而 GitHub Release Note 必须将本次版本的所有改动点都全面归纳总结出来，方便用户、开发者和运维排查。
 

@@ -474,7 +474,7 @@ export class HarnessRuntime {
       ? this.options.dshSafePatchPath
       : this.options.dshPatchPath
     if (!existsSync(patchPath)) {
-      this.setState('failed', `DSH Desktop patch was not found: ${patchPath}`)
+      this.setState('failed', `农科小智智能体 patch was not found: ${patchPath}`)
       return
     }
     const marketPatchPath = this.options.dshMarketPatchPath
@@ -516,7 +516,7 @@ export class HarnessRuntime {
       )
     }
     this.writeLog(`[desktop] endpoint ${url}`)
-    this.setState('starting', 'Starting DeepSeek Harness…')
+    this.setState('starting', 'Starting 农科小智智能体…')
 
     const shellEnvironment = await prewarmShellEnvironment()
     let child: HarnessChildProcess

@@ -2,7 +2,7 @@ import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { demoteMarketGeneration, ensureMarketBaseline, marketUsableWithoutBaseline, readProfileMarket, VERIFIED_MARKET_BASELINE } from '../src/main/state/market-baseline'
+import { demoteMarketGeneration, ensureMarketBaseline, marketRemovalMarkerPath, marketUsableWithoutBaseline, readProfileMarket, VERIFIED_MARKET_BASELINE } from '../src/main/state/market-baseline'
 import { runProfileStartupMaintenance, type ProfileStartupMaintenanceDeps } from '../src/main/state/profile-startup-maintenance'
 import { readInstalledPluginVersion } from '../src/main/state/plugin-market-check'
 import { readDesired, registryLayout, writeDesired, writeGenerationMeta } from 'dsh-desktop-market-installer/generations/registry'
@@ -211,8 +211,53 @@ describe('market baseline at normal startup', () => {
     const upgrade = vi.fn(async () => ({ ok: false, detail: 'install attempted' }))
     await expect(ensureMarketBaseline(options, upgrade)).rejects.toThrow('install attempted')
     await writeFile(join(profile, 'package.json'), JSON.stringify({ dependencies: {} }))
+    await writeFile(marketRemovalMarkerPath(options.dshHome), 'removed by user')
     await ensureMarketBaseline(options, upgrade)
     expect(upgrade).toHaveBeenCalledTimes(1)
+  })
+
+  it('installs the plugin market by default on a profile that never declared it', async () => {
+    const { options, market, profile } = await fixture()
+    await rm(market, { recursive: true })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({ dependencies: {} }))
+    const upgrade = vi.fn(async ({ targetVersion }: { targetVersion: string }) => {
+      await mkdir(market, { recursive: true })
+      await writeFile(join(market, 'package.json'), JSON.stringify({ name: 'dshmarket', version: targetVersion }))
+      return { ok: true }
+    })
+    const notes: string[] = []
+    await ensureMarketBaseline({ ...options, note: (line) => notes.push(line) }, upgrade)
+    expect(upgrade).toHaveBeenCalledTimes(1)
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    expect(manifest.dependencies.dshmarket).toBe(`^${VERIFIED_MARKET_BASELINE}`)
+    expect(manifest.dsh.profile.bundles).toContain('dshmarket')
+    expect(notes.join('\n')).toContain('installing the default market')
+  })
+
+  it('defers a failed default install without blocking boot or leaving the declaration behind', async () => {
+    const { options, market, profile } = await fixture()
+    await rm(market, { recursive: true })
+    const original = JSON.stringify({ dependencies: {} }, undefined, 2)
+    await writeFile(join(profile, 'package.json'), `${original}\n`)
+    const notes: string[] = []
+    await ensureMarketBaseline({ ...options, note: (line) => notes.push(line) }, async () => ({
+      ok: false,
+      detail: 'registry unreachable'
+    }))
+    expect(await readFile(join(profile, 'package.json'), 'utf8')).toBe(`${original}\n`)
+    expect(notes.join('\n')).toContain('default market install deferred')
+  })
+
+  it('does not default-install a market the user removed', async () => {
+    const { options, market, profile } = await fixture()
+    await rm(market, { recursive: true })
+    const original = JSON.stringify({ dependencies: {} }, undefined, 2)
+    await writeFile(join(profile, 'package.json'), `${original}\n`)
+    await writeFile(marketRemovalMarkerPath(options.dshHome), 'removed by user')
+    const upgrade = vi.fn(async () => ({ ok: true }))
+    await ensureMarketBaseline(options, upgrade)
+    expect(upgrade).not.toHaveBeenCalled()
+    expect(await readFile(join(profile, 'package.json'), 'utf8')).toBe(`${original}\n`)
   })
 
   it.each(['recovery', 'restore'] as const)('does not upgrade during %s deferral', async (gate) => {

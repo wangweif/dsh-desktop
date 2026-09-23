@@ -41,7 +41,7 @@ describe('sign-windows-unpacked', () => {
       '--tsretrywait',
       '10',
       '--name',
-      'DSH Desktop',
+      '农科小智智能体',
       '--url',
       'https://www.dshdesktop.com',
       'C:\\test\\app.exe'
