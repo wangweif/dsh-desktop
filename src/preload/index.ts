@@ -10,6 +10,7 @@ import {
 import { isPluginLoadError } from './plugin-error-view'
 import { findBootFailureText } from './boot-failure'
 import { mountWindowsTitlebarLayout } from './windows-titlebar'
+import { initEnterpriseChip, mountEnterpriseChip } from './enterprise-chip'
 import type {
   EnterpriseLoginResult,
   EnterpriseServerUrlResult,
@@ -18,6 +19,8 @@ import type {
 
 // Intercept and persist localStorage to disk storage before any page script executes
 setupDesktopStoragePersistence()
+
+void initEnterpriseChip()
 
 const ROOT_ID = 'dsh-desktop-update-root'
 const MOBILE_BUTTON_ID = 'dsh-desktop-mobile-button'
@@ -138,6 +141,7 @@ function scheduleDomSync(): void {
 function runDomSync(): void {
   domSyncScheduled = false
   mountMobileButton()
+  mountEnterpriseChip()
   if (bootScanSettled) return
   // The boot screen only exists until Harness renders its own UI, and the
   // sidebar appearing is that moment. Past it the selector can never match
