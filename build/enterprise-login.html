@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>农科小智智能体</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --canvas: #f7f7f8;
+        --surface: #ffffff;
+        --surface-soft: #f5f6f7;
+        --ink: #18181b;
+        --muted: #71717a;
+        --line: #e4e4e7;
+        --line-strong: #d4d4d8;
+        --button: #18181b;
+        --button-hover: #303034;
+        --primary-ink: #ffffff;
+        --danger: #c33b38;
+        --shadow: 0 12px 34px rgba(24, 24, 27, 0.1);
+      }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; min-height: 100%; margin: 0; }
+      body {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        overflow: auto;
+        padding: 40px 24px;
+        color: var(--ink);
+        background: var(--canvas);
+      }
+      button { font: inherit; }
+      .shell {
+        display: flex;
+        flex-direction: column;
+        width: min(420px, 100%);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        overflow: hidden;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 18px 26px;
+        border-bottom: 1px solid var(--line);
+      }
+      .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+      .brand img { width: 28px; height: 28px; border-radius: 8px; }
+      .brand-name { font-size: 14px; font-weight: 650; }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 2px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .content { padding: 26px 28px 24px; }
+      .notice {
+        display: none;
+        margin: 0 0 14px;
+        padding: 11px 13px;
+        border-radius: 10px;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--danger);
+        background: rgba(195, 59, 56, 0.08);
+      }
+      .notice.visible { display: block; }
+      h1 { margin: 0 0 18px; font-size: 21px; font-weight: 650; letter-spacing: -0.025em; }
+      .field { margin: 0 0 14px; }
+      .field label { display: block; margin: 0 0 6px; font-size: 12px; font-weight: 620; color: var(--muted); }
+      .field input {
+        width: 100%;
+        min-height: 40px;
+        padding: 8px 12px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        color: var(--ink);
+        background: var(--surface);
+        font-size: 14px;
+      }
+      .field input:focus-visible { outline: 2px solid #4d6bfe; outline-offset: 1px; }
+      .button {
+        min-height: 40px;
+        padding: 9px 15px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        color: var(--ink);
+        background: var(--surface);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 620;
+      }
+      .button.primary { width: 100%; border-color: var(--button); color: var(--primary-ink); background: var(--button); }
+      .button.primary:hover { background: var(--button-hover); }
+      .button[disabled] { opacity: .55; cursor: default; }
+      .server-toggle {
+        margin-top: 16px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 620;
+        cursor: pointer;
+      }
+      .server-toggle:hover { color: var(--ink); }
+      .server-panel { display: none; margin-top: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+      .server-panel.open { display: block; }
+      .server-panel .hint { margin: 0 0 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+      .server-row { display: flex; gap: 8px; }
+      .server-row input { flex: 1; min-width: 0; }
+      .server-row .button { flex: none; }
+      .unreachable-actions { display: none; gap: 9px; margin-top: 8px; }
+      .unreachable-actions.visible { display: flex; }
+      .unreachable-actions .button { flex: 1; }
+      .user-card { display: none; }
+      .user-card.visible { display: block; }
+      .user-head { display: flex; align-items: center; gap: 14px; margin: 4px 0 18px; }
+      .avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        color: #ffffff;
+        background: #2f6f4f;
+        font-size: 22px;
+        font-weight: 650;
+        flex: none;
+      }
+      .user-head .name { font-size: 17px; font-weight: 650; }
+      .user-head .role { margin-top: 3px; color: var(--muted); font-size: 12px; }
+      .rows { border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); }
+      .row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
+      .row:first-child { border-top: 0; }
+      .row .k { color: var(--muted); flex: none; }
+      .row .v { overflow-wrap: anywhere; text-align: right; }
+      :root[data-theme="dark"] {
+        --canvas: #141416;
+        --surface: #202023;
+        --surface-soft: #29292d;
+        --ink: #f2f2f4;
+        --muted: #a5a7ad;
+        --line: #3a3a3f;
+        --line-strong: #4a4a50;
+        --button: #f4f4f5;
+        --button-hover: #ffffff;
+        --primary-ink: #111217;
+        --danger: #ee7772;
+        --shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --canvas: #141416;
+          --surface: #202023;
+          --surface-soft: #29292d;
+          --ink: #f2f2f4;
+          --muted: #a5a7ad;
+          --line: #3a3a3f;
+          --line-strong: #4a4a50;
+          --button: #f4f4f5;
+          --button-hover: #ffffff;
+          --primary-ink: #111217;
+          --danger: #ee7772;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell" aria-labelledby="heading">
+      <header class="header">
+        <div class="brand">
+          <img id="icon" alt="" />
+          <span class="brand-name">农科小智智能体</span>
+          <span class="badge" id="badge">平台登录</span>
+        </div>
+      </header>
+      <section class="content">
+        <p class="notice" id="notice" role="alert"></p>
+
+        <div id="view-form">
+          <h1 id="heading">登录</h1>
+          <div class="field">
+            <label for="username" id="label-username">用户名</label>
+            <input id="username" type="text" autocomplete="username" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="password" id="label-password">密码</label>
+            <input id="password" type="password" autocomplete="current-password" />
+          </div>
+          <button class="button primary" id="login" type="button">登录</button>
+          <div class="unreachable-actions" id="unreachable-actions">
+            <button class="button" id="retry" type="button">重试</button>
+            <button class="button" id="edit-server" type="button">修改服务器地址</button>
+            <button class="button" id="quit" type="button">退出</button>
+          </div>
+          <button class="server-toggle" id="server-toggle" type="button">服务器设置</button>
+          <div class="server-panel" id="server-panel">
+            <p class="hint" id="server-hint">agent_platform 服务器地址，修改后需重新登录。</p>
+            <div class="server-row">
+              <input id="server-url" type="text" spellcheck="false" />
+              <button class="button" id="save-server" type="button">保存</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="user-card" id="view-user">
+          <h1>登录成功</h1>
+          <div class="user-head">
+            <span class="avatar" id="user-avatar"></span>
+            <div>
+              <div class="name" id="user-name"></div>
+              <div class="role" id="user-role"></div>
+            </div>
+          </div>
+          <div class="rows" id="user-rows"></div>
+          <button class="button primary" id="enter" type="button" style="margin-top:18px;">进入</button>
+        </div>
+      </section>
+    </main>
+    <script>
+      const params = new URLSearchParams(location.search)
+      const state = JSON.parse(params.get('state') || '{}')
+      const locale = state.locale === 'en' ? 'en' : 'zh'
+      document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+      document.documentElement.dataset.theme = params.get('theme') || 'system'
+      document.getElementById('icon').src = params.get('icon') || 'icon.png'
+      if (locale === 'en') {
+        document.getElementById('badge').textContent = 'Platform sign-in'
+        document.getElementById('heading').textContent = 'Sign in'
+        document.getElementById('label-username').textContent = 'Username'
+        document.getElementById('label-password').textContent = 'Password'
+        document.getElementById('login').textContent = 'Sign in'
+        document.getElementById('retry').textContent = 'Retry'
+        document.getElementById('edit-server').textContent = 'Change server'
+        document.getElementById('quit').textContent = 'Quit'
+        document.getElementById('server-toggle').textContent = 'Server settings'
+        document.getElementById('server-hint').textContent = 'agent_platform server address. Signing in again is required after changing it.'
+        document.getElementById('save-server').textContent = 'Save'
+        document.getElementById('enter').textContent = 'Continue'
+      }
+
+      const ROLE_LABELS = {
+        super_admin: locale === 'zh' ? '系统管理员' : 'System admin',
+        tenant_admin: locale === 'zh' ? '租户管理员' : 'Tenant admin',
+        tenant_user: locale === 'zh' ? '租户用户' : 'Tenant user'
+      }
+      const notice = document.getElementById('notice')
+      const showNotice = (text) => {
+        notice.textContent = text
+        notice.classList.add('visible')
+      }
+      const clearNotice = () => {
+        notice.textContent = ''
+        notice.classList.remove('visible')
+      }
+
+      const serverUrlInput = document.getElementById('server-url')
+      serverUrlInput.value = state.serverUrl || 'http://localhost:3002'
+      const serverPanel = document.getElementById('server-panel')
+      document.getElementById('server-toggle').addEventListener('click', () => {
+        serverPanel.classList.toggle('open')
+      })
+      document.getElementById('edit-server').addEventListener('click', () => {
+        serverPanel.classList.add('open')
+        serverUrlInput.focus()
+      })
+      document.getElementById('save-server').addEventListener('click', async () => {
+        const saveButton = document.getElementById('save-server')
+        saveButton.disabled = true
+        try {
+          const result = await window.dshEnterprise.setServerUrl(serverUrlInput.value.trim())
+          if (result.ok) {
+            serverUrlInput.value = await window.dshEnterprise.getServerUrl()
+            clearNotice()
+            serverPanel.classList.remove('open')
+          } else {
+            showNotice(result.message || '服务器地址无效')
+          }
+        } finally {
+          saveButton.disabled = false
+        }
+      })
+
+      const loginButton = document.getElementById('login')
+      const usernameInput = document.getElementById('username')
+      const passwordInput = document.getElementById('password')
+      const unreachableActions = document.getElementById('unreachable-actions')
+      const submit = async () => {
+        clearNotice()
+        unreachableActions.classList.remove('visible')
+        loginButton.disabled = true
+        loginButton.textContent = locale === 'zh' ? '登录中…' : 'Signing in…'
+        try {
+          const result = await window.dshEnterprise.login(
+            usernameInput.value.trim(),
+            passwordInput.value
+          )
+          if (result.ok) {
+            showUserCard(result.user)
+          } else {
+            showNotice(result.message)
+            if (result.code === 'unreachable') unreachableActions.classList.add('visible')
+            passwordInput.select()
+          }
+        } catch (error) {
+          showNotice(locale === 'zh' ? '桌面桥不可用，请重启应用' : 'Desktop bridge unavailable')
+          console.error(error)
+        } finally {
+          loginButton.disabled = false
+          loginButton.textContent = locale === 'zh' ? '登录' : 'Sign in'
+        }
+      }
+      loginButton.addEventListener('click', submit)
+      document.getElementById('retry').addEventListener('click', () => {
+        void submit()
+      })
+      passwordInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') void submit()
+      })
+      document.getElementById('quit').addEventListener('click', () => {
+        void window.dshEnterprise.quit()
+      })
+
+      const displayName = (user) => (user.nickname || user.username) || '?'
+      const avatarLetter = (user) => {
+        const name = displayName(user).trim()
+        return name ? [...name][0].toUpperCase() : '?'
+      }
+      const showUserCard = (user) => {
+        document.getElementById('view-form').style.display = 'none'
+        const card = document.getElementById('view-user')
+        card.classList.add('visible')
+        document.getElementById('user-avatar').textContent = avatarLetter(user)
+        document.getElementById('user-name').textContent = displayName(user)
+        document.getElementById('user-role').textContent =
+          ROLE_LABELS[user.role] || user.role
+        const rows = [
+          [locale === 'zh' ? '用户名' : 'Username', user.username],
+          [locale === 'zh' ? '角色' : 'Role', ROLE_LABELS[user.role] || user.role],
+          user.email ? [locale === 'zh' ? '邮箱' : 'Email', user.email] : null,
+          user.tenantName ? [locale === 'zh' ? '租户' : 'Tenant', user.tenantName] : null
+        ].filter(Boolean)
+        const container = document.getElementById('user-rows')
+        container.textContent = ''
+        for (const [key, value] of rows) {
+          const row = document.createElement('div')
+          row.className = 'row'
+          const k = document.createElement('span')
+          k.className = 'k'
+          k.textContent = key
+          const v = document.createElement('span')
+          v.className = 'v'
+          v.textContent = String(value)
+          row.append(k, v)
+          container.appendChild(row)
+        }
+      }
+      document.getElementById('enter').addEventListener('click', () => {
+        void window.dshEnterprise.enter()
+      })
+    </script>
+  </body>
+</html>

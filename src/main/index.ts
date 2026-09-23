@@ -1142,6 +1142,7 @@ async function openHarness(
   url: string,
   focusIntent: WindowFocusIntent = 'automatic'
 ): Promise<void> {
+  if (!(await ensureEnterpriseAuthenticated())) return
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
   const rendererUrl = desktopHarnessUrl(url, process.platform, runtime.snapshot().authToken)
   if (shouldLoadHarnessUrl(window.webContents.getURL(), url)) {
@@ -1278,6 +1279,39 @@ async function showSplash(): Promise<void> {
   })
   if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return
   raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
+}
+
+async function showEnterpriseLogin(): Promise<boolean> {
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const enterPromise = new Promise<boolean>((resolve) => {
+    enterpriseEnterResolver = () => resolve(true)
+    window.once('closed', () => resolve(false))
+  })
+  const navigationVersion = ++mainWindowNavigationVersion
+  window.webContents.stop()
+  await window.loadFile(desktopResourcePath('enterprise-login.html'), {
+    query: {
+      state: JSON.stringify({
+        locale: harnessLocale(),
+        serverUrl: enterpriseAuth?.getServerUrl() ?? DEFAULT_ENTERPRISE_SERVER_URL
+      }),
+      icon: app.isPackaged ? 'icon.png' : 'app-icon.png',
+      theme: harnessThemePreference()
+    }
+  })
+  if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return false
+  raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
+  return enterPromise
+}
+
+async function ensureEnterpriseAuthenticated(): Promise<boolean> {
+  if (!enterpriseAuth) return true
+  await enterpriseRestore
+  if (enterpriseAuth.isAuthenticated()) return true
+  enterpriseLoginGate ??= showEnterpriseLogin().finally(() => {
+    enterpriseLoginGate = undefined
+  })
+  return enterpriseLoginGate
 }
 
 /**
