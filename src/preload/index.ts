@@ -10,6 +10,11 @@ import {
 import { isPluginLoadError } from './plugin-error-view'
 import { findBootFailureText } from './boot-failure'
 import { mountWindowsTitlebarLayout } from './windows-titlebar'
+import type {
+  EnterpriseLoginResult,
+  EnterpriseServerUrlResult,
+  EnterpriseUser
+} from '../shared/enterprise'
 
 // Intercept and persist localStorage to disk storage before any page script executes
 setupDesktopStoragePersistence()
@@ -380,6 +385,22 @@ contextBridge.exposeInMainWorld(
       action: string,
       selection: { plugins?: string[]; issues?: string[]; removalId?: string }
     ): Promise<{ ok: boolean }> => ipcRenderer.invoke('safe-mode:action', action, selection)
+  })
+)
+
+contextBridge.exposeInMainWorld(
+  'dshEnterprise',
+  Object.freeze({
+    login: (username: string, password: string): Promise<EnterpriseLoginResult> =>
+      ipcRenderer.invoke('enterprise:login', username, password),
+    getUser: (): Promise<{ ok: true; user: EnterpriseUser } | { ok: false }> =>
+      ipcRenderer.invoke('enterprise:get-user'),
+    logout: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:logout'),
+    getServerUrl: (): Promise<string> => ipcRenderer.invoke('enterprise:get-server-url'),
+    setServerUrl: (url: string): Promise<EnterpriseServerUrlResult> =>
+      ipcRenderer.invoke('enterprise:set-server-url', url),
+    enter: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:enter'),
+    quit: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:quit')
   })
 )
 

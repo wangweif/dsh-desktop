@@ -14,6 +14,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  safeStorage,
   shell,
   Tray,
   utilityProcess,
@@ -22,6 +23,8 @@ import {
   type MessageBoxOptions
 } from 'electron'
 import { clearStaleLoopbackHttpCache } from './cache-maintenance'
+import { DEFAULT_ENTERPRISE_SERVER_URL, EnterpriseAuth, type EnterpriseCredentialCodec } from './enterprise/auth'
+import { registerEnterpriseHandlers } from './enterprise/ipc'
 import {
   DEFAULT_HARNESS_PORT,
   extractFailureCause,
@@ -232,6 +235,10 @@ let failureRecoveryVisible = false
 let harnessLaunchOperation: Promise<void> | undefined
 let pluginRecoveryActionResolver: ((action: PluginRecoveryAction) => void) | undefined
 let webImportActionResolver: ((action: WebImportAction) => void) | undefined
+let enterpriseAuth: EnterpriseAuth | undefined
+let enterpriseRestore: Promise<void> = Promise.resolve()
+let enterpriseEnterResolver: (() => void) | undefined
+let enterpriseLoginGate: Promise<boolean> | undefined
 let mainWindowNavigationVersion = 0
 let rendererPluginFailureLogs: string[] = []
 let pluginRecoveryRemovedPlugins: string[] = []
@@ -1889,6 +1896,22 @@ function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent): void {
   }
 }
 
+function safeStorageCodec(): EnterpriseCredentialCodec {
+  return {
+    // Linux 无 keyring 时 safeStorage 不可用，退化为带标记的 base64；文件本身 0600
+    encrypt: (plain) =>
+      safeStorage.isEncryptionAvailable()
+        ? safeStorage.encryptString(plain).toString('base64')
+        : `plain:${Buffer.from(plain, 'utf8').toString('base64')}`,
+    decrypt: (stored) => {
+      if (stored.startsWith('plain:')) {
+        return Buffer.from(stored.slice('plain:'.length), 'base64').toString('utf8')
+      }
+      return safeStorage.decryptString(Buffer.from(stored, 'base64'))
+    }
+  }
+}
+
 function assertTrustedSafeModeManagerEvent(event: IpcMainInvokeEvent): void {
   if (
     !safeModeManager ||
@@ -3349,6 +3372,14 @@ async function bootstrap(): Promise<void> {
     }
   })
   createWindow()
+  const enterprise = new EnterpriseAuth({
+    storePath: join(app.getPath('userData'), 'enterprise', 'session.json'),
+    codec: safeStorageCodec(),
+    log: (line) => console.warn(line)
+  })
+  enterpriseAuth = enterprise
+  // 静默恢复会话；失败（含平台不可达）不打断启动，由登录门禁兜底
+  enterpriseRestore = enterprise.restore().then(() => undefined)
   runtime = new HarnessRuntime({
     // A packaged app's stdout may be a closed pipe; only mirror logs in development.
     echoLogs: !app.isPackaged,
@@ -3388,6 +3419,37 @@ async function bootstrap(): Promise<void> {
     }
   })
   registerHarnessHandlers()
+  registerEnterpriseHandlers(
+    {
+      // 上下文类型来自 EnterpriseIpcRegistrar；event 结构兼容 IpcMainInvokeEvent
+      handle: (channel, listener) => {
+        ipcMain.handle(channel, (event, ...args) => listener(event, ...args))
+      }
+    },
+    {
+      auth: enterprise,
+      isTrustedEvent: (event) => {
+        try {
+          assertTrustedMainWindowEvent(event as IpcMainInvokeEvent)
+          return true
+        } catch {
+          return false
+        }
+      },
+      onEnter: () => {
+        enterpriseEnterResolver?.()
+        enterpriseEnterResolver = undefined
+      },
+      onQuit: () => {
+        app.quit()
+      },
+      onSessionEnded: async () => {
+        const url = runtime.snapshot().url
+        if (url) await openHarness(url).catch(showUnexpectedError)
+      },
+      log: (line) => runtime.note(line)
+    }
+  )
   mobileBridge = new LanMobileBridge({
     harnessUrl: () => runtime.snapshot().url,
     harnessAuthToken: () => runtime.snapshot().authToken,
