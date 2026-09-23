@@ -67,6 +67,8 @@ The main Harness window uses:
 
 Only local Harness, packaged file, and desktop recovery URLs are trusted inside the app. Ordinary HTTP and HTTPS links are opened externally. IPC handlers validate the sending window and main frame before performing privileged actions such as opening the native directory picker, restarting Harness, managing Safe Mode, or installing an update.
 
+Enterprise sign-in gates the Harness UI: before `openHarness` loads, the main process restores the persisted agent_platform session (encrypted cookie under `enterprise/session.json` in the user data directory) via `GET /api/auth/me`; an invalid or missing session loads `build/enterprise-login.html` in the main window instead. The login page performs username/password sign-in through main-process IPC (`enterprise:*` channels, validated against the main window and frame) so credentials never enter the renderer, and the server address is editable from that page. The signed-in user is shown on a preload-mounted chip in the Harness sidebar settings area with a sign-out action. Safe Mode and recovery surfaces are not gated, so platform outages cannot block repair.
+
 ## Profiles and plugin recovery
 
 The normal web profile may contain community plugins and their transitive packages. Startup performs bounded consistency checks and can repair incomplete package operations before launching Harness.
