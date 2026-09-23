@@ -121,11 +121,25 @@ export function mountEnterpriseChip(): void {
     const created = document.createElement('button')
     created.id = CHIP_ID
     created.type = 'button'
-    const label = enterpriseDisplayName(user)
-    created.title = label
-    created.setAttribute('aria-label', label)
     created.addEventListener('click', () => toggleCard())
     chipButton = created
+  }
+  // 头像与名称是样式锚点，缺失即隐形；每次挂载都校验并刷新内容
+  if (chipButton.childElementCount === 0) {
+    const avatar = document.createElement('span')
+    avatar.className = 'avatar'
+    const name = document.createElement('span')
+    name.className = 'name'
+    chipButton.append(avatar, name)
+  }
+  const avatar = chipButton.querySelector<HTMLElement>('.avatar')
+  const name = chipButton.querySelector<HTMLElement>('.name')
+  const label = enterpriseDisplayName(user)
+  if (avatar) avatar.textContent = enterpriseAvatarLetter(user)
+  if (name) name.textContent = label
+  if (chipButton.title !== label) {
+    chipButton.title = label
+    chipButton.setAttribute('aria-label', label)
   }
   // 插到设置区最前，避免与右侧绝对定位的手机按钮重叠
   if (chipButton.parentElement !== settingsArea) {

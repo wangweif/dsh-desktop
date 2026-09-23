@@ -20,8 +20,6 @@ import type {
 // Intercept and persist localStorage to disk storage before any page script executes
 setupDesktopStoragePersistence()
 
-void initEnterpriseChip()
-
 const ROOT_ID = 'dsh-desktop-update-root'
 const MOBILE_BUTTON_ID = 'dsh-desktop-mobile-button'
 const SAFE_MODE_BANNER_ID = 'dsh-desktop-safe-mode-banner'
@@ -329,6 +327,9 @@ function initializeUi(): void {
   mount()
   mountAbout()
   mountMobileButton()
+  // DOM 就绪后再拉取用户信息：document-start 时 document.head 尚未解析，
+  // ensureStyles 挂样式会静默抛错；角标本体由 runDomSync 的挂载循环负责。
+  void initEnterpriseChip()
   checkBootFailureInDom()
   domObserver.observe(document.documentElement, {
     childList: true,
