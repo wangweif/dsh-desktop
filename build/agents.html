@@ -503,7 +503,8 @@
         } else {
           installedSection.style.display = 'none'
         }
-        if (platform.length === 0 && orphans.length === 0) {
+        // 平台列表为空但本地有创作时仍要展示「我的创建」区（首个上传场景）
+        if (platform.length === 0 && orphans.length === 0 && localPresets.length === 0) {
           showCenter(TEXT.empty, [])
           return
         }
