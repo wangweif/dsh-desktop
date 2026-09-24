@@ -16,6 +16,12 @@ export interface EnterpriseCredentialCodec {
   decrypt(stored: string): string
 }
 
+export type EnterpriseApiResult =
+  | { status: 'ok'; data: unknown }
+  | { status: 'unauthorized' }
+  | { status: 'unreachable' }
+  | { status: 'error'; code: number; message: string }
+
 interface EnterpriseStore {
   serverUrl?: string
   sessionCookieEncrypted?: string
@@ -119,6 +125,40 @@ export class EnterpriseAuth {
 
   getUser(): EnterpriseUser | undefined {
     return this.#user
+  }
+
+  /**
+   * 以当前登录会话调用平台 GET 接口。cookie 留在本类：智能体下载等
+   * 调用方只拿到已解析的包络结果，不接触会话凭证。
+   * 平台业务错误多为 HTTP 200 + {code:4xx, success:false}，鉴权失败才是真 401/403。
+   */
+  async apiGet(path: string): Promise<EnterpriseApiResult> {
+    const cookie = this.#sessionCookie
+    if (!cookie) return { status: 'unauthorized' }
+    let response: Response
+    try {
+      response = await this.#fetchImpl(`${this.#serverUrl}${path}`, {
+        headers: { cookie },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      })
+    } catch (error) {
+      this.#log(`[enterprise] api get ${path} failed: ${errorMessage(error)}`)
+      return { status: 'unreachable' }
+    }
+    if (response.status === 401 || response.status === 403) return { status: 'unauthorized' }
+    if (!response.ok) return { status: 'unreachable' }
+    const payload = await parseJsonBody(response)
+    if (payload?.success !== true) {
+      return {
+        status: 'error',
+        code: typeof payload?.code === 'number' ? payload.code : response.status,
+        message:
+          typeof payload?.message === 'string' && payload.message.length > 0
+            ? payload.message
+            : `请求失败（${path}）`
+      }
+    }
+    return { status: 'ok', data: payload.data }
   }
 
   isAuthenticated(): boolean {

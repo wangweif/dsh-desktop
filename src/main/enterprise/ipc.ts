@@ -2,7 +2,7 @@ import type { EnterpriseAuth } from './auth'
 import type { EnterpriseServerUrlResult } from '../../shared/enterprise'
 
 /** ipcMain.handle 的最小结构投影，测试里用注册表替换。 */
-interface EnterpriseIpcRegistrar {
+export interface EnterpriseIpcRegistrar {
   handle(
     channel: string,
     listener: (event: EnterpriseIpcEvent, ...args: unknown[]) => unknown

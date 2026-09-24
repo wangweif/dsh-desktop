@@ -235,4 +235,53 @@ describe('EnterpriseAuth', () => {
     const stored = JSON.parse(await readFile(storePath, 'utf8')) as Record<string, unknown>
     expect(stored.sessionCookieEncrypted).toBeUndefined()
   })
+
+  it('apiGet resolves the platform envelope without leaking the cookie', async () => {
+    const storePath = await tempStorePath()
+    const agentsData = [{ id: 'a1', name: '育种助手' }]
+    const { fetch, calls } = createFetchStub((call) => {
+      if (call.url.endsWith('/api/auth/login')) return successLogin()
+      if (call.url.endsWith('/api/agents')) {
+        return new Response(JSON.stringify({ code: 0, success: true, data: agentsData }))
+      }
+      return new Response(JSON.stringify(meBody))
+    })
+    const auth = new EnterpriseAuth({ storePath, fetchImpl: fetch, codec: plainCodec })
+    await auth.login('admin', 'admin')
+
+    const ok = await auth.apiGet('/api/agents')
+    expect(ok).toEqual({ status: 'ok', data: agentsData })
+    // 请求带会话 cookie；结果里不携带 cookie
+    const agentsCall = calls.find((call) => call.url.endsWith('/api/agents'))
+    expect(agentsCall?.init?.headers).toMatchObject({ cookie: 'session=signed-token' })
+    expect(JSON.stringify(ok)).not.toContain('signed-token')
+  })
+
+  it('apiGet maps business envelopes, auth failures, network failures and the signed-out state', async () => {
+    const storePath = await tempStorePath()
+    const { fetch } = createFetchStub((call) => {
+      if (call.url.endsWith('/api/auth/login')) return successLogin()
+      if (call.url.endsWith('/api/agents/bus')) {
+        return new Response(JSON.stringify({ code: 404, success: false, message: '智能体不存在或无权访问' }))
+      }
+      if (call.url.endsWith('/api/agents/401')) return new Response('{"detail":"未登录"}', { status: 401 })
+      if (call.url.endsWith('/api/agents/500')) return new Response('boom', { status: 500 })
+      if (call.url.endsWith('/api/agents/offline')) return Promise.reject(new TypeError('fetch failed'))
+      return new Response(JSON.stringify(meBody))
+    })
+    const auth = new EnterpriseAuth({ storePath, fetchImpl: fetch, codec: plainCodec })
+
+    // 未登录：不发请求直接 unauthorized
+    expect(await auth.apiGet('/api/agents/bus')).toEqual({ status: 'unauthorized' })
+
+    await auth.login('admin', 'admin')
+    expect(await auth.apiGet('/api/agents/bus')).toEqual({
+      status: 'error',
+      code: 404,
+      message: '智能体不存在或无权访问'
+    })
+    expect(await auth.apiGet('/api/agents/401')).toEqual({ status: 'unauthorized' })
+    expect(await auth.apiGet('/api/agents/500')).toEqual({ status: 'unreachable' })
+    expect(await auth.apiGet('/api/agents/offline')).toEqual({ status: 'unreachable' })
+  })
 })
