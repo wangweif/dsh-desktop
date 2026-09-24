@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { parse } from 'yaml'
 import type { EnterpriseApiResult, EnterpriseAuth } from './auth'
 import type { EnterpriseIpcEvent, EnterpriseIpcRegistrar } from './ipc'
 import type {
@@ -9,8 +10,12 @@ import type {
   AgentUninstallResult,
   EnterpriseAgentFailureCode,
   InstalledPlatformAgent,
-  PlatformAgentSummary
+  LocalPresetListResult,
+  LocalPresetSummary,
+  PlatformAgentSummary,
+  UploadedAgentLink
 } from '../../shared/enterprise-agents'
+import { JS_TAG } from '../../shared/persona-extract'
 
 /** 与 harness dsh-agent-presets 的 PRESET_ID 保持一致（lib/index.js:105）。 */
 const PRESET_ID = /^[a-z0-9][a-z0-9-]*$/
@@ -21,6 +26,8 @@ const PLATFORM_PRESET_ID = /^nkyz-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 const COMPOSITION_FILE = 'agent.cordis.yml'
 const METADATA_FILE = 'preset.yml'
 const MANIFEST_FILE = 'platform-agent.json'
+/** 上传映射（上传成功后写入 preset 目录）；与下载侧 platform-agent.json 对称。 */
+const UPLOADED_FILE = 'uploaded-agent.json'
 /**
  * 用户主动卸载的智能体名单（agentId 集合）。自动同步会跳过名单内的智能体，
  * 否则"管理员已分配"会让一次主动卸载在下次启动时被原样装回。
@@ -43,6 +50,14 @@ interface PlatformManifest {
   updatedAt: string | null
   systemPromptSha256: string
   installedAt: string
+  serverUrl: string
+}
+
+interface UploadedManifest {
+  source: 'agent_platform_upload'
+  agentId: string
+  version: number | null
+  uploadedAt: string
   serverUrl: string
 }
 
@@ -223,6 +238,35 @@ function installedFromManifest(presetId: string, manifest: PlatformManifest): In
   }
 }
 
+function isUploadedManifest(value: unknown): value is UploadedManifest {
+  if (typeof value !== 'object' || value === null) return false
+  const source = value as Record<string, unknown>
+  return (
+    source.source === 'agent_platform_upload' &&
+    typeof source.agentId === 'string' &&
+    typeof source.uploadedAt === 'string' &&
+    typeof source.serverUrl === 'string'
+  )
+}
+
+/** preset.yml 元数据（name/description）；坏文件/缺文件回退目录 id。 */
+async function readPresetMetadata(dir: string, presetId: string): Promise<{ name: string; description: string }> {
+  try {
+    const raw = await readFile(join(dir, METADATA_FILE), 'utf8')
+    const parsed = parse(raw, { customTags: [JS_TAG] }) as unknown
+    if (typeof parsed === 'object' && parsed !== null) {
+      const source = parsed as Record<string, unknown>
+      return {
+        name: text(source.name) ?? presetId,
+        description: typeof source.description === 'string' ? source.description : ''
+      }
+    }
+  } catch {
+    // 元数据缺失/坏文件：回退目录 id，不影响列表
+  }
+  return { name: presetId, description: '' }
+}
+
 export interface AgentSyncOutcome {
   /** 平台列表拉取失败（未登录/不可达）时为 false；单项安装失败不置 false */
   ok: boolean
@@ -399,6 +443,56 @@ export class EnterpriseAgentStore {
     }
     installed.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
     return installed
+  }
+
+  /** 「我的创建」列表：用户根下非平台前缀的本地 preset（创造模式/复制产物）。 */
+  async listLocalPresets(): Promise<LocalPresetListResult> {
+    let entries
+    try {
+      entries = await readdir(this.#presetRoot, { withFileTypes: true })
+    } catch (error) {
+      if (!isMissingError(error)) {
+        this.#log(`[enterprise] preset root unreadable: ${errorMessage(error)}`)
+        return { ok: false, message: '读取本地智能体目录失败' }
+      }
+      return { ok: true, presets: [] }
+    }
+    const presets: LocalPresetSummary[] = []
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !PRESET_ID.test(entry.name)) continue
+      if (entry.name.startsWith(PLATFORM_PRESET_PREFIX)) continue
+      const dir = join(this.#presetRoot, entry.name)
+      try {
+        await readFile(join(dir, COMPOSITION_FILE), 'utf8')
+      } catch {
+        continue // 没有组合文件的目录不是可上传 preset
+      }
+      const meta = await readPresetMetadata(dir, entry.name)
+      presets.push({
+        presetId: entry.name,
+        name: meta.name,
+        description: meta.description,
+        uploaded: await this.#readUploadedLink(dir)
+      })
+    }
+    presets.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
+    return { ok: true, presets }
+  }
+
+  async #readUploadedLink(dir: string): Promise<UploadedAgentLink | null> {
+    try {
+      const raw = await readFile(join(dir, UPLOADED_FILE), 'utf8')
+      const manifest = JSON.parse(raw) as unknown
+      if (!isUploadedManifest(manifest)) return null
+      return {
+        agentId: manifest.agentId,
+        version: versionOf(manifest.version),
+        uploadedAt: manifest.uploadedAt,
+        serverUrl: manifest.serverUrl
+      }
+    } catch {
+      return null
+    }
   }
 
   async uninstallAgent(presetId: string): Promise<AgentUninstallResult> {

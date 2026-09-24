@@ -384,4 +384,53 @@ describe('EnterpriseAgentStore', () => {
     })
     expect(await store.syncAgents(signedOut)).toEqual({ ok: false, installed: 0, updated: 0, skipped: 0, failed: 0 })
   })
+
+  describe('listLocalPresets', () => {
+    it('lists local presets with metadata and upload mapping, excluding platform downloads', async () => {
+      const root = await tempPresetRoot()
+      const make = async (id: string, files: Record<string, string>) => {
+        await mkdir(join(root, id))
+        for (const [name, content] of Object.entries(files)) await writeFile(join(root, id, name), content)
+      }
+      await make('breeding-helper', {
+        'agent.cordis.yml': "- id: persona\n  name: '@deepseek-ai/dsh-persona'\n  config:\n    prefix: |-\n      你是育种助手。\n",
+        'preset.yml': 'name: "育种小助手"\ndescription: "本地创造"\n',
+        'uploaded-agent.json': JSON.stringify({
+          source: 'agent_platform_upload', agentId: AGENT_UUID, version: 2,
+          uploadedAt: '2026-09-24T08:00:00Z', serverUrl: 'http://localhost:3002'
+        })
+      })
+      await make('no-meta', { 'agent.cordis.yml': '- id: persona\n' })
+      await make(`nkyz-${AGENT_UUID}`, {
+        'agent.cordis.yml': '- id: persona\n', 'preset.yml': 'name: "平台下载"\n'
+      })
+      await make('no-composition', { 'preset.yml': 'name: "没有组合文件"\n' })
+      await mkdir(join(root, '.dl-staging'))
+      const store = new EnterpriseAgentStore({ presetRoot: root })
+      const result = await store.listLocalPresets()
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.presets.map((preset) => preset.presetId)).toEqual(['breeding-helper', 'no-meta'])
+      expect(result.presets[0]).toMatchObject({
+        name: '育种小助手', description: '本地创造',
+        uploaded: { agentId: AGENT_UUID, version: 2, serverUrl: 'http://localhost:3002' }
+      })
+      expect(result.presets[1]).toMatchObject({ name: 'no-meta', description: '', uploaded: null })
+    })
+
+    it('returns ok with empty list when the preset root is missing', async () => {
+      const store = new EnterpriseAgentStore({ presetRoot: join(await tempPresetRoot(), 'nope') })
+      await expect(store.listLocalPresets()).resolves.toEqual({ ok: true, presets: [] })
+    })
+
+    it('falls back to preset id when preset.yml is malformed', async () => {
+      const root = await tempPresetRoot()
+      await mkdir(join(root, 'broken-meta'))
+      await writeFile(join(root, 'broken-meta', 'agent.cordis.yml'), '- id: persona\n')
+      await writeFile(join(root, 'broken-meta', 'preset.yml'), 'name: [unclosed')
+      const store = new EnterpriseAgentStore({ presetRoot: root })
+      const result = await store.listLocalPresets()
+      expect(result.ok && result.presets[0]?.name).toBe('broken-meta')
+    })
+  })
 })

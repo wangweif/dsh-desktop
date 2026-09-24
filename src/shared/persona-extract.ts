@@ -7,6 +7,8 @@ import {
   staticallyDisabled
 } from './persona-prefix'
 
+export { JS_TAG }
+
 /** 从本地 agent.cordis.yml 提取 persona 系统提示词（上传平台用）。 */
 export interface ExtractedPersona {
   /** persona 行 config.prefix 的字符串值（trim 后）；不可得为 null */
