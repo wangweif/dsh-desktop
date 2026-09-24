@@ -161,6 +161,38 @@ export class EnterpriseAuth {
     return { status: 'ok', data: payload.data }
   }
 
+  /** 与 apiGet 同一套包络/鉴权/超时语义的 POST 版；cookie 同样不出本类。 */
+  async apiPost(path: string, body: unknown): Promise<EnterpriseApiResult> {
+    const cookie = this.#sessionCookie
+    if (!cookie) return { status: 'unauthorized' }
+    let response: Response
+    try {
+      response = await this.#fetchImpl(`${this.#serverUrl}${path}`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      })
+    } catch (error) {
+      this.#log(`[enterprise] api post ${path} failed: ${errorMessage(error)}`)
+      return { status: 'unreachable' }
+    }
+    if (response.status === 401 || response.status === 403) return { status: 'unauthorized' }
+    if (!response.ok) return { status: 'unreachable' }
+    const payload = await parseJsonBody(response)
+    if (payload?.success !== true) {
+      return {
+        status: 'error',
+        code: typeof payload?.code === 'number' ? payload.code : response.status,
+        message:
+          typeof payload?.message === 'string' && payload.message.length > 0
+            ? payload.message
+            : `请求失败（${path}）`
+      }
+    }
+    return { status: 'ok', data: payload.data }
+  }
+
   isAuthenticated(): boolean {
     return this.#sessionCookie !== undefined && this.#user !== undefined
   }

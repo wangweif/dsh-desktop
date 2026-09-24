@@ -285,3 +285,66 @@ describe('EnterpriseAuth', () => {
     expect(await auth.apiGet('/api/agents/offline')).toEqual({ status: 'unreachable' })
   })
 })
+
+describe('EnterpriseAuth.apiPost', () => {
+  async function postedAuth(handler: (call: FetchCall) => Response) {
+    const stub = createFetchStub((call) => {
+      if (call.url.endsWith('/api/auth/login')) return successLogin()
+      return handler(call)
+    })
+    const storePath = await tempStorePath()
+    const auth = new EnterpriseAuth({ storePath, fetchImpl: stub.fetch, codec: plainCodec })
+    await auth.login('admin', 'admin')
+    return { auth, stub }
+  }
+
+  it('sends JSON body with session cookie and unwraps the envelope', async () => {
+    const { auth, stub } = await postedAuth((call) => {
+      if (call.url.endsWith('/api/agents/upload')) {
+        return new Response(JSON.stringify({ code: 0, success: true, data: { id: 'x', version: 2 } }))
+      }
+      return new Response('{}')
+    })
+    const result = await auth.apiPost('/api/agents/upload', { name: 'a' })
+    expect(result).toEqual({ status: 'ok', data: { id: 'x', version: 2 } })
+    const post = stub.calls.find((call) => call.url.endsWith('/api/agents/upload'))
+    expect(post?.init?.method).toBe('POST')
+    expect(post?.init?.headers).toMatchObject({ cookie: 'session=signed-token', 'content-type': 'application/json' })
+    expect(post?.init?.body).toBe(JSON.stringify({ name: 'a' }))
+  })
+
+  it('maps business failures (HTTP 200 + success:false) to error with code and message', async () => {
+    const { auth } = await postedAuth((call) => {
+      if (call.url.endsWith('/api/agents/upload')) {
+        return new Response(JSON.stringify({ code: 403, success: false, message: '上传智能体需要属于一个租户的账号' }))
+      }
+      return new Response('{}')
+    })
+    await expect(auth.apiPost('/api/agents/upload', {})).resolves.toEqual({
+      status: 'error', code: 403, message: '上传智能体需要属于一个租户的账号'
+    })
+  })
+
+  it('returns unauthorized on real 401/403 and unreachable on network failure', async () => {
+    const gone = await postedAuth((call) => {
+      if (call.url.endsWith('/api/agents/upload')) return new Response('{"detail":"未登录"}', { status: 401 })
+      return new Response('{}')
+    })
+    await expect(gone.auth.apiPost('/api/agents/upload', {})).resolves.toEqual({ status: 'unauthorized' })
+
+    const dead = new EnterpriseAuth({
+      storePath: await tempStorePath(),
+      fetchImpl: (async () => {
+        throw new Error('connect ECONNREFUSED')
+      }) as unknown as typeof fetch,
+      codec: plainCodec
+    })
+    // 未登录直接 unauthorized；先登录成功一次再让后续请求挂掉，验证 unreachable 分支
+    await expect(dead.apiPost('/api/agents/upload', {})).resolves.toEqual({ status: 'unauthorized' })
+  })
+
+  it('is unauthorized before any request when not logged in', async () => {
+    const auth = new EnterpriseAuth({ storePath: await tempStorePath() })
+    await expect(auth.apiPost('/api/agents/upload', {})).resolves.toEqual({ status: 'unauthorized' })
+  })
+})

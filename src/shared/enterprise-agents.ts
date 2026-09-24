@@ -43,3 +43,27 @@ export type AgentInstallResult =
 export type AgentUninstallResult =
   | { ok: true }
   | { ok: false; message: string }
+
+/** 本地自建 preset（创造模式/复制产物）摘要；「我的创建」区数据源 */
+export interface LocalPresetSummary {
+  presetId: string
+  name: string
+  description: string
+  /** 上传成功后写入 preset 目录的映射；未上传为 null */
+  uploaded: UploadedAgentLink | null
+}
+
+export interface UploadedAgentLink {
+  agentId: string
+  version: number | null
+  uploadedAt: string
+  serverUrl: string
+}
+
+export type LocalPresetListResult =
+  | { ok: true; presets: LocalPresetSummary[] }
+  | { ok: false; message: string }
+
+export type AgentUploadResult =
+  | { ok: true; agentId: string; version: number | null }
+  | { ok: false; code: EnterpriseAgentFailureCode; message: string }
