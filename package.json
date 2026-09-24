@@ -407,6 +407,10 @@
         "from": "build/safe-mode.html",
         "to": "safe-mode.html"
       },
+      {
+        "from": "build/enterprise-login.html",
+        "to": "enterprise-login.html"
+      },
 
       {
         "from": "build/community-wechat-qr.png",

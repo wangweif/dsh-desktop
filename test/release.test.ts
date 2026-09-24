@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -224,6 +224,27 @@ describe('GitHub release contract', () => {
     expect(packageJson.build.win.target).toEqual([{ target: 'nsis', arch: ['x64'] }])
     expect(packageJson.build.win.requestedExecutionLevel).toBe('asInvoker')
     expect(packageJson.build.portable).toBeUndefined()
+  })
+
+  it('ships every standalone build page through extraResources', async () => {
+    // Standalone pages load via desktopResourcePath, which resolves to
+    // process.resourcesPath when packaged — a page missing from extraResources
+    // opens fine in dev and disappears from the installed app.
+    const packageJson = JSON.parse(
+      await readFile(path.join(projectRoot, 'package.json'), 'utf8')
+    ) as {
+      build: { extraResources: Array<{ from: string; to: string }> }
+    }
+    const buildDir = await readdir(path.join(projectRoot, 'build'))
+    const pages = buildDir.filter((name) => name.endsWith('.html')).sort()
+
+    expect(pages.length).toBeGreaterThan(0)
+    for (const page of pages) {
+      expect(packageJson.build.extraResources, page).toContainEqual({
+        from: `build/${page}`,
+        to: page
+      })
+    }
   })
 
   it('keeps update metadata on the latest channel for pre-release versions', async () => {
