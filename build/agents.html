@@ -216,6 +216,12 @@
             <h2 class="section-title" id="installed-title">已下载（平台上已不存在）</h2>
             <div class="cards" id="installed-cards"></div>
           </div>
+          <div id="local-section">
+            <h2 class="section-title" id="local-title">我的创建</h2>
+            <p class="hint" id="local-hint" style="margin: 6px 0 0;">创造模式里创作的智能体；上传后同租户成员即可下载使用。</p>
+            <div class="cards" id="local-cards"></div>
+            <div class="center-state" id="local-empty" style="display:none; margin-top: 10px;"></div>
+          </div>
         </div>
       </section>
     </main>
@@ -249,6 +255,22 @@
         installed: locale === 'zh' ? '已安装' : 'Installed',
         updatable: locale === 'zh' ? '有更新' : 'Update available',
         installedSection: locale === 'zh' ? '已下载（平台上已不存在）' : 'Downloaded (no longer on the platform)',
+        myCreations: locale === 'zh' ? '我的创建' : 'My creations',
+        myCreationsHint:
+          locale === 'zh'
+            ? '创造模式里创作的智能体；上传后同租户成员即可下载使用。'
+            : 'Agents authored in Create mode; once uploaded, tenant members can download them.',
+        emptyLocal:
+          locale === 'zh'
+            ? '暂无本地创建的智能体；在创造模式里创作后会出现在这里'
+            : 'No local creations yet; agents authored in Create mode appear here',
+        upload: locale === 'zh' ? '上传' : 'Upload',
+        uploading: locale === 'zh' ? '上传中…' : 'Uploading…',
+        reupload: locale === 'zh' ? '更新上传' : 'Re-upload',
+        notUploaded: locale === 'zh' ? '未上传' : 'Not uploaded',
+        uploadedLabel: locale === 'zh' ? '已上传' : 'Uploaded',
+        uploadedAt: locale === 'zh' ? '上传于' : 'Uploaded',
+        presetId: locale === 'zh' ? '本地 ID' : 'Local ID',
         installedAt: locale === 'zh' ? '下载于' : 'Downloaded',
         unauthorized: locale === 'zh' ? '登录已过期，请返回工作台重新登录' : 'Session expired. Go back and sign in again.',
         model: locale === 'zh' ? '模型' : 'Model',
@@ -260,6 +282,8 @@
       document.getElementById('back').textContent = TEXT.back
       document.getElementById('hint').textContent = TEXT.hint
       document.getElementById('installed-title').textContent = TEXT.installedSection
+      document.getElementById('local-title').textContent = TEXT.myCreations
+      document.getElementById('local-hint').textContent = TEXT.myCreationsHint
 
       const notice = document.getElementById('notice')
       const showNotice = (text) => {
@@ -307,6 +331,7 @@
 
       let platform = []
       let installed = []
+      let localPresets = []
       const installedByAgentId = new Map()
       for (const item of installed) installedByAgentId.set(item.agentId, item)
 
@@ -482,6 +507,7 @@
           showCenter(TEXT.empty, [])
           return
         }
+        renderLocal()
         showList()
       }
 
@@ -496,11 +522,102 @@
         }
       }
 
+      const reloadLocal = async () => {
+        try {
+          const result = await window.dshEnterprise.listLocalPresets()
+          localPresets = result.ok ? result.presets : []
+        } catch (error) {
+          console.error(error)
+          localPresets = []
+        }
+      }
+
+      const renderLocal = () => {
+        const cards = document.getElementById('local-cards')
+        const empty = document.getElementById('local-empty')
+        cards.textContent = ''
+        empty.style.display = 'none'
+        if (localPresets.length === 0) {
+          empty.textContent = TEXT.emptyLocal
+          empty.style.display = 'flex'
+          return
+        }
+        for (const preset of localPresets) {
+          const card = document.createElement('div')
+          card.className = 'card'
+          const titleRow = document.createElement('div')
+          titleRow.className = 'title-row'
+          const name = document.createElement('span')
+          name.className = 'name'
+          name.textContent = preset.name
+          titleRow.appendChild(name)
+          if (preset.uploaded && preset.uploaded.version !== null) {
+            const version = document.createElement('span')
+            version.className = 'version'
+            version.textContent = `${TEXT.versionPrefix}${preset.uploaded.version}`
+            titleRow.appendChild(version)
+          }
+          card.appendChild(titleRow)
+          if (preset.description) {
+            const description = document.createElement('div')
+            description.className = 'description'
+            description.textContent = preset.description
+            card.appendChild(description)
+          }
+          const meta = document.createElement('div')
+          meta.className = 'model'
+          meta.textContent = `${TEXT.presetId}: ${preset.presetId}`
+          card.appendChild(meta)
+          const statusNode = document.createElement('div')
+          statusNode.className = 'status'
+          if (preset.uploaded) {
+            statusNode.classList.add('installed')
+            statusNode.textContent = `${TEXT.uploadedLabel} ${TEXT.versionPrefix}${preset.uploaded.version ?? '?'} · ${TEXT.uploadedAt} ${preset.uploaded.uploadedAt.slice(0, 10)}`
+          } else {
+            statusNode.textContent = TEXT.notUploaded
+          }
+          card.appendChild(statusNode)
+          const actions = document.createElement('div')
+          actions.className = 'actions'
+          const button = document.createElement('button')
+          button.className = 'button primary'
+          button.type = 'button'
+          button.textContent = preset.uploaded ? TEXT.reupload : TEXT.upload
+          button.addEventListener('click', () => void uploadLocal(preset, button))
+          actions.appendChild(button)
+          card.appendChild(actions)
+          cards.appendChild(card)
+        }
+      }
+
+      const uploadLocal = async (preset, button) => {
+        clearNotice()
+        button.disabled = true
+        button.textContent = TEXT.uploading
+        try {
+          const result = await window.dshEnterprise.uploadAgent(preset.presetId)
+          if (result.ok) {
+            await reloadLocal()
+            const listResult = await window.dshEnterprise.listAgents()
+            if (listResult.ok) platform = listResult.agents
+          } else {
+            showNotice(result.message || TEXT.bridgeError)
+          }
+        } catch (error) {
+          showNotice(TEXT.bridgeError)
+          console.error(error)
+        } finally {
+          button.disabled = false
+          render()
+        }
+      }
+
       const load = async () => {
         clearNotice()
         showCenter(TEXT.loading, [])
         try {
           await reloadInstalled()
+          await reloadLocal()
           const result = await window.dshEnterprise.listAgents()
           if (result.ok) {
             platform = result.agents
