@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>平台智能体 · 农科小智智能体</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --canvas: #f7f7f8;
+        --surface: #ffffff;
+        --surface-soft: #f5f6f7;
+        --ink: #18181b;
+        --muted: #71717a;
+        --line: #e4e4e7;
+        --line-strong: #d4d4d8;
+        --button: #18181b;
+        --button-hover: #303034;
+        --primary-ink: #ffffff;
+        --accent: #2f6f4f;
+        --accent-soft: rgba(47, 111, 79, 0.1);
+        --danger: #c33b38;
+        --shadow: 0 12px 34px rgba(24, 24, 27, 0.1);
+      }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; min-height: 100%; margin: 0; }
+      body {
+        min-height: 100vh;
+        padding: 32px 20px 48px;
+        color: var(--ink);
+        background: var(--canvas);
+        overflow-y: auto;
+      }
+      button { font: inherit; }
+      .shell {
+        display: flex;
+        flex-direction: column;
+        width: min(760px, 100%);
+        margin: 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        overflow: hidden;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--line);
+      }
+      .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+      .brand img { width: 28px; height: 28px; border-radius: 8px; }
+      .brand-name { font-size: 14px; font-weight: 650; }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 2px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .content { padding: 22px 24px 26px; }
+      .notice {
+        display: none;
+        margin: 0 0 14px;
+        padding: 11px 13px;
+        border-radius: 10px;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--danger);
+        background: rgba(195, 59, 56, 0.08);
+        overflow-wrap: anywhere;
+      }
+      .notice.visible { display: block; }
+      .hint {
+        margin: 0 0 16px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+      }
+      .button {
+        min-height: 36px;
+        padding: 7px 14px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        color: var(--ink);
+        background: var(--surface);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 620;
+      }
+      .button:hover { border-color: var(--muted); }
+      .button:focus-visible { outline: 2px solid #4d6bfe; outline-offset: 1px; }
+      .button[disabled] { opacity: 0.55; cursor: default; }
+      .button.primary { border-color: var(--button); color: var(--primary-ink); background: var(--button); }
+      .button.primary:hover { background: var(--button-hover); }
+      .button.danger { color: var(--danger); border-color: rgba(195, 59, 56, 0.4); }
+      .button.danger:hover { border-color: var(--danger); }
+      #heading { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+      }
+      .card {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface-soft);
+      }
+      .card .title-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+      .card .name { font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+      .card .version {
+        flex: none;
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 620;
+      }
+      .card .description {
+        flex: 1;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+        overflow-wrap: anywhere;
+        white-space: pre-line;
+      }
+      .card .status { font-size: 11px; color: var(--muted); }
+      .card .status.installed { color: var(--accent); }
+      .card .status.updatable { color: #9a6700; }
+      .card .model { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+      .card .actions { display: flex; gap: 8px; }
+      .section-title { margin: 22px 0 0; font-size: 13px; font-weight: 650; color: var(--muted); }
+      .center-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        margin-top: 28px;
+        color: var(--muted);
+        font-size: 13px;
+        text-align: center;
+      }
+      .center-state .row { display: flex; gap: 9px; }
+      :root[data-theme="dark"] {
+        --canvas: #141416;
+        --surface: #202023;
+        --surface-soft: #29292d;
+        --ink: #f2f2f4;
+        --muted: #a5a7ad;
+        --line: #3a3a3f;
+        --line-strong: #4a4a50;
+        --button: #f4f4f5;
+        --button-hover: #ffffff;
+        --primary-ink: #111217;
+        --accent: #7fc79e;
+        --accent-soft: rgba(127, 199, 158, 0.12);
+        --danger: #ee7772;
+        --shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --canvas: #141416;
+          --surface: #202023;
+          --surface-soft: #29292d;
+          --ink: #f2f2f4;
+          --muted: #a5a7ad;
+          --line: #3a3a3f;
+          --line-strong: #4a4a50;
+          --button: #f4f4f5;
+          --button-hover: #ffffff;
+          --primary-ink: #111217;
+          --accent: #7fc79e;
+          --accent-soft: rgba(127, 199, 158, 0.12);
+          --danger: #ee7772;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell" aria-labelledby="heading">
+      <header class="header">
+        <div class="brand">
+          <img id="icon" alt="" />
+          <span class="brand-name">农科小智智能体</span>
+          <span class="badge" id="badge">平台智能体</span>
+        </div>
+        <button class="button" id="back" type="button">返回工作台</button>
+      </header>
+      <section class="content">
+        <h1 id="heading">平台智能体</h1>
+        <p class="hint" id="hint">下载后可在新建会话的智能体选择器中使用；本地运行，平台知识库等能力不随下载。</p>
+        <p class="notice" id="notice" role="alert"></p>
+        <div class="center-state" id="state" aria-live="polite"></div>
+        <div id="list" style="display:none;">
+          <div class="cards" id="cards"></div>
+          <div id="installed-section" style="display:none;">
+            <h2 class="section-title" id="installed-title">已下载（平台上已不存在）</h2>
+            <div class="cards" id="installed-cards"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script>
+      'use strict'
+      const params = new URLSearchParams(location.search)
+      const state = JSON.parse(params.get('state') || '{}')
+      const locale = state.locale === 'en' ? 'en' : 'zh'
+      document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+      document.documentElement.dataset.theme = params.get('theme') || 'system'
+      document.getElementById('icon').src = params.get('icon') || 'icon.png'
+
+      const TEXT = {
+        heading: locale === 'zh' ? '平台智能体' : 'Platform agents',
+        badge: locale === 'zh' ? '平台智能体' : 'Platform agents',
+        back: locale === 'zh' ? '返回工作台' : 'Back to workspace',
+        hint:
+          locale === 'zh'
+            ? '下载后可在新建会话的智能体选择器中使用；本地运行，平台知识库等能力不随下载。'
+            : 'Downloaded agents appear in the new-session agent picker. They run locally; platform knowledge bases do not travel with the download.',
+        loading: locale === 'zh' ? '正在加载平台智能体…' : 'Loading platform agents…',
+        empty: locale === 'zh' ? '平台上暂无可用智能体' : 'No agents available on the platform',
+        retry: locale === 'zh' ? '重试' : 'Retry',
+        bridgeError: locale === 'zh' ? '桌面桥不可用，请重启应用' : 'Desktop bridge unavailable, please restart the app',
+        download: locale === 'zh' ? '下载' : 'Download',
+        downloading: locale === 'zh' ? '安装中…' : 'Installing…',
+        update: locale === 'zh' ? '更新' : 'Update',
+        uninstall: locale === 'zh' ? '卸载' : 'Uninstall',
+        confirmUninstall: locale === 'zh' ? '确认卸载？' : 'Confirm uninstall?',
+        notInstalled: locale === 'zh' ? '未安装' : 'Not installed',
+        installed: locale === 'zh' ? '已安装' : 'Installed',
+        updatable: locale === 'zh' ? '有更新' : 'Update available',
+        installedSection: locale === 'zh' ? '已下载（平台上已不存在）' : 'Downloaded (no longer on the platform)',
+        installedAt: locale === 'zh' ? '下载于' : 'Downloaded',
+        unauthorized: locale === 'zh' ? '登录已过期，请返回工作台重新登录' : 'Session expired. Go back and sign in again.',
+        model: locale === 'zh' ? '模型' : 'Model',
+        versionPrefix: 'v'
+      }
+      document.title = locale === 'zh' ? '平台智能体 · 农科小智智能体' : 'Platform agents · Nongke Xiaozhi'
+      document.getElementById('heading').textContent = TEXT.heading
+      document.getElementById('badge').textContent = TEXT.badge
+      document.getElementById('back').textContent = TEXT.back
+      document.getElementById('hint').textContent = TEXT.hint
+      document.getElementById('installed-title').textContent = TEXT.installedSection
+
+      const notice = document.getElementById('notice')
+      const showNotice = (text) => {
+        notice.textContent = text
+        notice.classList.add('visible')
+      }
+      const clearNotice = () => {
+        notice.textContent = ''
+        notice.classList.remove('visible')
+      }
+
+      document.getElementById('back').addEventListener('click', () => {
+        void window.dshEnterprise.closeAgents()
+      })
+
+      const stateBox = document.getElementById('state')
+      const listBox = document.getElementById('list')
+      const showCenter = (text, buttons) => {
+        stateBox.textContent = ''
+        const label = document.createElement('div')
+        label.textContent = text
+        stateBox.appendChild(label)
+        if (buttons && buttons.length > 0) {
+          const row = document.createElement('div')
+          row.className = 'row'
+          for (const [text2, onClick] of buttons) {
+            const button = document.createElement('button')
+            button.className = 'button'
+            button.type = 'button'
+            button.textContent = text2
+            button.addEventListener('click', onClick)
+            row.appendChild(button)
+          }
+          stateBox.appendChild(row)
+        }
+        stateBox.style.display = 'flex'
+        listBox.style.display = 'none'
+      }
+      const showList = () => {
+        stateBox.style.display = 'none'
+        // 清空残留的中心态文案（如 loading），避免屏幕阅读器读出旧状态
+        stateBox.textContent = ''
+        listBox.style.display = 'block'
+      }
+
+      let platform = []
+      let installed = []
+      const installedByAgentId = new Map()
+      for (const item of installed) installedByAgentId.set(item.agentId, item)
+
+      const statusOf = (agent) => {
+        const local = installedByAgentId.get(agent.id)
+        if (!local) return { kind: 'not-installed', local: null }
+        if (agent.version !== null && local.version !== null && agent.version !== local.version) {
+          return { kind: 'updatable', local }
+        }
+        if (
+          agent.version === null &&
+          agent.updatedAt !== null &&
+          local.updatedAt !== null &&
+          agent.updatedAt !== local.updatedAt
+        ) {
+          return { kind: 'updatable', local }
+        }
+        return { kind: 'installed', local }
+      }
+
+      const renderCard = (agent, status, allowDownload) => {
+        const card = document.createElement('div')
+        card.className = 'card'
+        const titleRow = document.createElement('div')
+        titleRow.className = 'title-row'
+        const name = document.createElement('span')
+        name.className = 'name'
+        name.textContent = agent.name
+        titleRow.appendChild(name)
+        if (status.local && status.local.version !== null) {
+          const version = document.createElement('span')
+          version.className = 'version'
+          version.textContent = `${TEXT.versionPrefix}${status.local.version}`
+          titleRow.appendChild(version)
+        }
+        card.appendChild(titleRow)
+        if (agent.description) {
+          const description = document.createElement('div')
+          description.className = 'description'
+          description.textContent = agent.description
+          card.appendChild(description)
+        }
+        if (agent.model) {
+          const model = document.createElement('div')
+          model.className = 'model'
+          model.textContent = `${TEXT.model}: ${agent.model}`
+          card.appendChild(model)
+        }
+        const statusNode = document.createElement('div')
+        statusNode.className = 'status'
+        if (status.kind === 'installed') {
+          statusNode.classList.add('installed')
+          statusNode.textContent =
+            status.local && status.local.version !== null
+              ? `${TEXT.installed} ${TEXT.versionPrefix}${status.local.version}`
+              : TEXT.installed
+        } else if (status.kind === 'updatable') {
+          statusNode.classList.add('updatable')
+          const from = status.local && status.local.version !== null ? ` ${TEXT.versionPrefix}${status.local.version}` : ''
+          const to = agent.version !== null ? ` ${TEXT.versionPrefix}${agent.version}` : ''
+          statusNode.textContent = `${TEXT.updatable}${from} →${to}`
+        } else {
+          statusNode.textContent = TEXT.notInstalled
+        }
+        card.appendChild(statusNode)
+        const actions = document.createElement('div')
+        actions.className = 'actions'
+        if (allowDownload && (status.kind === 'not-installed' || status.kind === 'updatable')) {
+          const button = document.createElement('button')
+          button.className = 'button primary'
+          button.type = 'button'
+          button.textContent = status.kind === 'updatable' ? TEXT.update : TEXT.download
+          button.addEventListener('click', () => void download(agent, button))
+          actions.appendChild(button)
+        }
+        if (status.local) {
+          const button = document.createElement('button')
+          button.className = 'button danger'
+          button.type = 'button'
+          button.textContent = TEXT.uninstall
+          button.addEventListener('click', () => confirmableUninstall(status.local, button))
+          actions.appendChild(button)
+        }
+        card.appendChild(actions)
+        return card
+      }
+
+      const download = async (agent, button) => {
+        clearNotice()
+        button.disabled = true
+        button.textContent = TEXT.downloading
+        try {
+          const result = await window.dshEnterprise.downloadAgent(agent.id)
+          if (result.ok) {
+            await reloadInstalled()
+          } else {
+            showNotice(result.message || TEXT.bridgeError)
+          }
+        } catch (error) {
+          showNotice(TEXT.bridgeError)
+          console.error(error)
+        } finally {
+          button.disabled = false
+          // 卡片由 render() 重建，按钮文案随状态自然恢复
+          render()
+        }
+      }
+
+      // 两步内联确认：第一次点变"确认卸载？"，3 秒未确认复原；不引入 modal
+      const confirmableUninstall = (local, button) => {
+        if (button.dataset.confirming === '1') {
+          window.clearTimeout(Number(button.dataset.timer))
+          button.dataset.confirming = '0'
+          void uninstall(local, button)
+          return
+        }
+        button.dataset.confirming = '1'
+        button.textContent = TEXT.confirmUninstall
+        button.dataset.timer = String(
+          window.setTimeout(() => {
+            button.dataset.confirming = '0'
+            button.textContent = TEXT.uninstall
+          }, 3000)
+        )
+      }
+
+      const uninstall = async (local, button) => {
+        clearNotice()
+        button.disabled = true
+        try {
+          const result = await window.dshEnterprise.uninstallAgent(local.presetId)
+          if (result.ok) {
+            await reloadInstalled()
+          } else {
+            showNotice(result.message || TEXT.bridgeError)
+          }
+        } catch (error) {
+          showNotice(TEXT.bridgeError)
+          console.error(error)
+        } finally {
+          button.disabled = false
+          button.textContent = TEXT.uninstall
+          render()
+        }
+      }
+
+      const render = () => {
+        const cards = document.getElementById('cards')
+        cards.textContent = ''
+        for (const agent of platform) {
+          cards.appendChild(renderCard(agent, statusOf(agent), true))
+        }
+        const installedSection = document.getElementById('installed-section')
+        const installedCards = document.getElementById('installed-cards')
+        installedCards.textContent = ''
+        const platformIds = new Set(platform.map((agent) => agent.id))
+        const orphans = installed.filter((item) => !platformIds.has(item.agentId))
+        if (orphans.length > 0) {
+          installedSection.style.display = 'block'
+          for (const orphan of orphans) {
+            installedCards.appendChild(
+              renderCard(
+                { id: orphan.agentId, name: orphan.name, description: orphan.description, model: null },
+                { kind: 'installed', local: orphan },
+                false
+              )
+            )
+          }
+        } else {
+          installedSection.style.display = 'none'
+        }
+        if (platform.length === 0 && orphans.length === 0) {
+          showCenter(TEXT.empty, [])
+          return
+        }
+        showList()
+      }
+
+      const reloadInstalled = async () => {
+        try {
+          const result = await window.dshEnterprise.installedAgents()
+          installed = result.ok ? result.agents : []
+          installedByAgentId.clear()
+          for (const item of installed) installedByAgentId.set(item.agentId, item)
+        } catch (error) {
+          console.error(error)
+        }
+      }
+
+      const load = async () => {
+        clearNotice()
+        showCenter(TEXT.loading, [])
+        try {
+          await reloadInstalled()
+          const result = await window.dshEnterprise.listAgents()
+          if (result.ok) {
+            platform = result.agents
+            render()
+          } else if (result.code === 'unauthorized') {
+            showCenter(TEXT.unauthorized, [[TEXT.back, () => void window.dshEnterprise.closeAgents()]])
+          } else {
+            showNotice(result.message)
+            showCenter(result.message, [[TEXT.retry, () => void load()]])
+          }
+        } catch (error) {
+          showNotice(TEXT.bridgeError)
+          showCenter(TEXT.bridgeError, [[TEXT.retry, () => void load()]])
+          console.error(error)
+        }
+      }
+      void load()
+    </script>
+  </body>
+</html>

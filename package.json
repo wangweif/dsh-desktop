@@ -411,6 +411,10 @@
         "from": "build/enterprise-login.html",
         "to": "enterprise-login.html"
       },
+      {
+        "from": "build/agents.html",
+        "to": "agents.html"
+      },
 
       {
         "from": "build/community-wechat-qr.png",

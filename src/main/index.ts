@@ -24,7 +24,8 @@ import {
 } from 'electron'
 import { clearStaleLoopbackHttpCache } from './cache-maintenance'
 import { DEFAULT_ENTERPRISE_SERVER_URL, EnterpriseAuth, type EnterpriseCredentialCodec } from './enterprise/auth'
-import { registerEnterpriseHandlers } from './enterprise/ipc'
+import { EnterpriseAgentStore, registerEnterpriseAgentHandlers } from './enterprise/agents'
+import { registerEnterpriseHandlers, type EnterpriseIpcEvent } from './enterprise/ipc'
 import {
   DEFAULT_HARNESS_PORT,
   extractFailureCause,
@@ -1312,6 +1313,24 @@ async function ensureEnterpriseAuthenticated(): Promise<boolean> {
     enterpriseLoginGate = undefined
   })
   return enterpriseLoginGate
+}
+
+async function showEnterpriseAgents(): Promise<void> {
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const navigationVersion = ++mainWindowNavigationVersion
+  window.webContents.stop()
+  await loadDesktopResource(window, desktopResourcePath('agents.html'), {
+    query: {
+      state: JSON.stringify({
+        locale: harnessLocale(),
+        serverUrl: enterpriseAuth?.getServerUrl() ?? DEFAULT_ENTERPRISE_SERVER_URL
+      }),
+      icon: app.isPackaged ? 'icon.png' : 'app-icon.png',
+      theme: harnessThemePreference()
+    }
+  })
+  if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return
+  raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
 }
 
 /**
@@ -3412,7 +3431,8 @@ async function bootstrap(): Promise<void> {
     log: (line) => console.warn(line)
   })
   enterpriseAuth = enterprise
-  // 静默恢复会话；失败（含平台不可达）不打断启动，由登录门禁兜底
+  // 静默恢复会话；失败（含平台不可达）不打断启动，由登录门禁兜底。
+  // 恢复成功后触发的智能体同步在 syncEnterpriseAgents 定义处挂接（不阻塞门禁 await）。
   enterpriseRestore = enterprise.restore().then(() => undefined)
   runtime = new HarnessRuntime({
     // A packaged app's stdout may be a closed pipe; only mirror logs in development.
@@ -3453,37 +3473,77 @@ async function bootstrap(): Promise<void> {
     }
   })
   registerHarnessHandlers()
-  registerEnterpriseHandlers(
-    {
-      // 上下文类型来自 EnterpriseIpcRegistrar；event 结构兼容 IpcMainInvokeEvent
-      handle: (channel, listener) => {
-        ipcMain.handle(channel, (event, ...args) => listener(event, ...args))
-      }
-    },
-    {
-      auth: enterprise,
-      isTrustedEvent: (event) => {
-        try {
-          assertTrustedMainWindowEvent(event as IpcMainInvokeEvent)
-          return true
-        } catch {
-          return false
-        }
-      },
-      onEnter: () => {
-        enterpriseEnterResolver?.()
-        enterpriseEnterResolver = undefined
-      },
-      onQuit: () => {
-        app.quit()
-      },
-      onSessionEnded: async () => {
-        const url = runtime.snapshot().url
-        if (url) await openHarness(url).catch(showUnexpectedError)
-      },
-      log: (line) => runtime.note(line)
+  const enterpriseIpc = {
+    // 上下文类型来自 EnterpriseIpcRegistrar；event 结构兼容 IpcMainInvokeEvent
+    handle: (channel: string, listener: (event: EnterpriseIpcEvent, ...args: unknown[]) => unknown) => {
+      ipcMain.handle(channel, (event, ...args) => listener(event, ...args))
     }
-  )
+  }
+  const isTrustedEnterpriseEvent = (event: unknown): boolean => {
+    try {
+      assertTrustedMainWindowEvent(event as IpcMainInvokeEvent)
+      return true
+    } catch {
+      return false
+    }
+  }
+  const enterpriseAgents = new EnterpriseAgentStore({
+    presetRoot: join(dshHome, '.agent-presets'),
+    log: (line) => runtime.note(line)
+  })
+  // 后台对齐平台分配：不阻塞进主界面，失败不打扰（下次启动再试）
+  const syncEnterpriseAgents = (): void => {
+    if (!enterprise.isAuthenticated()) return
+    void enterpriseAgents
+      .syncAgents(enterprise)
+      .then((outcome) => {
+        if (!outcome.ok || outcome.failed > 0) {
+          runtime.note(
+            `[enterprise] agent sync ${outcome.ok ? `finished with ${outcome.failed} failure(s)` : 'aborted (platform unreachable or signed out)'}`
+          )
+        } else if (outcome.installed + outcome.updated > 0) {
+          runtime.note(
+            `[enterprise] agent sync: ${outcome.installed} installed, ${outcome.updated} updated, ${outcome.skipped} unchanged`
+          )
+        }
+      })
+      .catch((error: unknown) =>
+        runtime.note(`[enterprise] agent sync failed: ${error instanceof Error ? error.message : String(error)}`)
+      )
+  }
+  // 启动会话恢复成功后同步一次；同步本身不进 enterpriseRestore（门禁不等它）
+  void enterpriseRestore.then(() => syncEnterpriseAgents())
+  registerEnterpriseHandlers(enterpriseIpc, {
+    auth: enterprise,
+    isTrustedEvent: isTrustedEnterpriseEvent,
+    onEnter: () => {
+      enterpriseEnterResolver?.()
+      enterpriseEnterResolver = undefined
+      syncEnterpriseAgents()
+    },
+    onQuit: () => {
+      app.quit()
+    },
+    onSessionEnded: async () => {
+      const url = runtime.snapshot().url
+      if (url) await openHarness(url).catch(showUnexpectedError)
+    },
+    log: (line) => runtime.note(line)
+  })
+  registerEnterpriseAgentHandlers(enterpriseIpc, {
+    auth: enterprise,
+    agents: enterpriseAgents,
+    isTrustedEvent: isTrustedEnterpriseEvent,
+    onOpenAgents: () => {
+      void showEnterpriseAgents().catch(showUnexpectedError)
+    },
+    onCloseAgents: async () => {
+      const url = runtime.snapshot().url
+      if (url) await openHarness(url).catch(showUnexpectedError)
+      else await showSplash()
+    },
+    log: (line) => runtime.note(line)
+  })
   mobileBridge = new LanMobileBridge({
     harnessUrl: () => runtime.snapshot().url,
     harnessAuthToken: () => runtime.snapshot().authToken,

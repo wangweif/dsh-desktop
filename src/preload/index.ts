@@ -11,11 +11,18 @@ import { isPluginLoadError } from './plugin-error-view'
 import { findBootFailureText } from './boot-failure'
 import { mountWindowsTitlebarLayout } from './windows-titlebar'
 import { initEnterpriseChip, mountEnterpriseChip } from './enterprise-chip'
+import { initEnterpriseAgentsButton, mountEnterpriseAgentsButton } from './enterprise-agents-button'
 import type {
   EnterpriseLoginResult,
   EnterpriseServerUrlResult,
   EnterpriseUser
 } from '../shared/enterprise'
+import type {
+  AgentInstallResult,
+  AgentListResult,
+  AgentUninstallResult,
+  InstalledPlatformAgent
+} from '../shared/enterprise-agents'
 
 // Intercept and persist localStorage to disk storage before any page script executes
 setupDesktopStoragePersistence()
@@ -140,6 +147,7 @@ function runDomSync(): void {
   domSyncScheduled = false
   mountMobileButton()
   mountEnterpriseChip()
+  mountEnterpriseAgentsButton()
   if (bootScanSettled) return
   // The boot screen only exists until Harness renders its own UI, and the
   // sidebar appearing is that moment. Past it the selector can never match
@@ -330,6 +338,7 @@ function initializeUi(): void {
   // DOM 就绪后再拉取用户信息：document-start 时 document.head 尚未解析，
   // ensureStyles 挂样式会静默抛错；角标本体由 runDomSync 的挂载循环负责。
   void initEnterpriseChip()
+  void initEnterpriseAgentsButton()
   checkBootFailureInDom()
   domObserver.observe(document.documentElement, {
     childList: true,
@@ -405,7 +414,16 @@ contextBridge.exposeInMainWorld(
     setServerUrl: (url: string): Promise<EnterpriseServerUrlResult> =>
       ipcRenderer.invoke('enterprise:set-server-url', url),
     enter: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:enter'),
-    quit: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:quit')
+    quit: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:quit'),
+    listAgents: (): Promise<AgentListResult> => ipcRenderer.invoke('enterprise:agents:list'),
+    installedAgents: (): Promise<{ ok: true; agents: InstalledPlatformAgent[] }> =>
+      ipcRenderer.invoke('enterprise:agents:installed'),
+    downloadAgent: (agentId: string): Promise<AgentInstallResult> =>
+      ipcRenderer.invoke('enterprise:agent-download', agentId),
+    uninstallAgent: (presetId: string): Promise<AgentUninstallResult> =>
+      ipcRenderer.invoke('enterprise:agent-uninstall', presetId),
+    openAgents: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:open-agents'),
+    closeAgents: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:close-agents')
   })
 )
 
