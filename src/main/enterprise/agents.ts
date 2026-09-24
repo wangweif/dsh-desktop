@@ -694,6 +694,19 @@ export function registerEnterpriseAgentHandlers(
     return deps.agents.uninstallAgent(presetId)
   })
 
+  ipc.handle('enterprise:local-presets', async (event) => {
+    guard(event)
+    return deps.agents.listLocalPresets()
+  })
+
+  ipc.handle('enterprise:agent-upload', async (event, presetId) => {
+    guard(event)
+    if (typeof presetId !== 'string' || presetId.length === 0) {
+      return { ok: false as const, code: 'invalid' as const, message: '智能体 ID 无效' }
+    }
+    return deps.agents.uploadAgent(deps.auth, presetId)
+  })
+
   ipc.handle('enterprise:open-agents', (event) => {
     guard(event)
     deps.onOpenAgents()

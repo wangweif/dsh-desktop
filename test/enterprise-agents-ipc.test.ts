@@ -46,7 +46,15 @@ function createDeps(
       uninstallAgent: async (presetId: string) => {
         calls.push(`uninstall:${presetId}`)
         return { ok: true }
-      }
+      },
+      listLocalPresets: async () => {
+        calls.push('local')
+        return { ok: true, presets: [] }
+      },
+      uploadAgent: async (_auth: unknown, presetId: string) => {
+        calls.push(`upload:${presetId}`)
+        return { ok: true, agentId: AGENT_UUID, version: 1 }
+      },
     } as unknown as EnterpriseAgentStore,
     isTrustedEvent: (event) => event === trustedEvent,
     onOpenAgents: () => {
@@ -70,6 +78,8 @@ describe('registerEnterpriseAgentHandlers', () => {
       'enterprise:agents:installed',
       'enterprise:agent-download',
       'enterprise:agent-uninstall',
+      'enterprise:local-presets',
+      'enterprise:agent-upload',
       'enterprise:open-agents',
       'enterprise:close-agents'
     ]) {
@@ -123,5 +133,23 @@ describe('registerEnterpriseAgentHandlers', () => {
     await (registrar.handlers.get('enterprise:open-agents') as Handler)(trustedEvent)
     await (registrar.handlers.get('enterprise:close-agents') as Handler)(trustedEvent)
     expect(deps.calls).toEqual(['open', 'close'])
+  })
+
+  it('delegates local-presets and upload to the store', async () => {
+    const registrar = createRegistrar()
+    const deps = createDeps()
+    registerEnterpriseAgentHandlers(registrar, deps)
+    await (registrar.handlers.get('enterprise:local-presets') as Handler)(trustedEvent)
+    await (registrar.handlers.get('enterprise:agent-upload') as Handler)(trustedEvent, 'breeding-helper')
+    expect(deps.calls).toEqual(['local', 'upload:breeding-helper'])
+  })
+
+  it('validates upload input before touching the store', async () => {
+    const registrar = createRegistrar()
+    const deps = createDeps()
+    registerEnterpriseAgentHandlers(registrar, deps)
+    const upload = registrar.handlers.get('enterprise:agent-upload') as Handler
+    await expect(upload(trustedEvent, 42)).resolves.toMatchObject({ ok: false, code: 'invalid' })
+    expect(deps.calls).toEqual([])
   })
 })

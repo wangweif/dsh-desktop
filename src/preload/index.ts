@@ -21,7 +21,9 @@ import type {
   AgentInstallResult,
   AgentListResult,
   AgentUninstallResult,
-  InstalledPlatformAgent
+  AgentUploadResult,
+  InstalledPlatformAgent,
+  LocalPresetListResult
 } from '../shared/enterprise-agents'
 
 // Intercept and persist localStorage to disk storage before any page script executes
@@ -422,6 +424,10 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke('enterprise:agent-download', agentId),
     uninstallAgent: (presetId: string): Promise<AgentUninstallResult> =>
       ipcRenderer.invoke('enterprise:agent-uninstall', presetId),
+    listLocalPresets: (): Promise<LocalPresetListResult> =>
+      ipcRenderer.invoke('enterprise:local-presets'),
+    uploadAgent: (presetId: string): Promise<AgentUploadResult> =>
+      ipcRenderer.invoke('enterprise:agent-upload', presetId),
     openAgents: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:open-agents'),
     closeAgents: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:close-agents')
   })
