@@ -33,10 +33,10 @@ export interface PersonaPrefixRewrite {
 const PERSONA_PACKAGE = '@deepseek-ai/dsh-persona'
 const BOM = '\uFEFF'
 /** Tag Harness uses for `!!js` scalars. The source is kept, never evaluated. */
-const JS_TAG_NAME = 'tag:yaml.org,2002:js'
+export const JS_TAG_NAME = 'tag:yaml.org,2002:js'
 
 /** Keep `!!js` rows parseable without evaluating them. */
-const JS_TAG = {
+export const JS_TAG = {
   tag: JS_TAG_NAME,
   resolve: (value: string): string => value
 }
@@ -52,17 +52,17 @@ interface ConfigUse {
   other: boolean
 }
 
-function asNode(value: unknown): Node | null {
+export function asNode(value: unknown): Node | null {
   if (isAlias(value) || isMap(value) || isSeq(value) || isScalar(value)) return value
   return null
 }
 
-function asScalar(value: unknown): Scalar | undefined {
+export function asScalar(value: unknown): Scalar | undefined {
   if (!isScalar(value)) return undefined
   return value
 }
 
-function scalarString(value: unknown): string | undefined {
+export function scalarString(value: unknown): string | undefined {
   const scalar = asScalar(value)
   if (scalar === undefined || typeof scalar.value !== 'string') return undefined
   return scalar.value
@@ -72,7 +72,7 @@ function scalarString(value: unknown): string | undefined {
  * Follow aliases until a concrete node. A cycle, or a node already on the
  * walk stack, stops the walk instead of recursing forever.
  */
-function resolveNode(value: unknown, doc: Document, stack: Set<Node>): Node | null {
+export function resolveNode(value: unknown, doc: Document, stack: Set<Node>): Node | null {
   let current = asNode(value)
   const aliases = new Set<Node>()
   while (current !== null && isAlias(current)) {
@@ -99,7 +99,7 @@ function jsonLiteralIsTruthy(value: unknown): boolean {
  * Non-`!!js` values use `Boolean(value)`. A `!!js` scalar counts only when
  * it is a JSON literal; other expressions are not executed here.
  */
-function staticallyDisabled(value: unknown, doc: Document, stack: Set<Node>): boolean {
+export function staticallyDisabled(value: unknown, doc: Document, stack: Set<Node>): boolean {
   const resolved = resolveNode(value, doc, stack)
   if (resolved === null) return false
   if (isScalar(resolved)) {
@@ -119,7 +119,7 @@ function renameTextKey(body: string, key: Scalar): string | undefined {
   return undefined
 }
 
-function rowName(row: YAMLMap, doc: Document, stack: Set<Node>): string | undefined {
+export function rowName(row: YAMLMap, doc: Document, stack: Set<Node>): string | undefined {
   return scalarString(resolveNode(row.get('name', true), doc, stack))
 }
 
