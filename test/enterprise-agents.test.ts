@@ -23,11 +23,13 @@ interface FetchStub {
   calls: Array<{ url: string; init: RequestInit | undefined }>
 }
 
-function createFetchStub(handler: (url: string) => Response | Promise<Response>): FetchStub {
+function createFetchStub(
+  handler: (url: string, init?: RequestInit) => Response | Promise<Response>
+): FetchStub {
   const calls: FetchStub['calls'] = []
   const impl = async (url: string, init?: RequestInit): Promise<Response> => {
     calls.push({ url, init })
-    return handler(url)
+    return handler(url, init)
   }
   return { fetch: impl as typeof fetch, calls }
 }
@@ -46,14 +48,19 @@ async function loggedInFixture(
   handlers: {
     agents?: unknown
     export?: { data?: unknown; envelope?: Response }
+    upload?: (body: unknown) => Response | Promise<Response>
   } = {}
 ): Promise<{ auth: EnterpriseAuth; stub: FetchStub }> {
-  const stub = createFetchStub((url) => {
+  const stub = createFetchStub((url, init) => {
     if (url.endsWith('/api/auth/login')) return loginResponse()
     if (url.endsWith('/api/auth/me')) {
       return envelope({ id: 'u1', username: 'admin', role: 'super_admin' })
     }
     if (url.endsWith('/api/agents')) return envelope(handlers.agents ?? [])
+    if (url.endsWith('/api/agents/upload')) {
+      if (handlers.upload) return handlers.upload(JSON.parse(String(init?.body ?? '{}')))
+      return envelope({ id: OTHER_UUID, version: 1 })
+    }
     if (url.endsWith(`/api/agents/${AGENT_UUID}/export`)) {
       if (handlers.export?.envelope) return handlers.export.envelope
       return envelope(
@@ -431,6 +438,102 @@ describe('EnterpriseAgentStore', () => {
       const store = new EnterpriseAgentStore({ presetRoot: root })
       const result = await store.listLocalPresets()
       expect(result.ok && result.presets[0]?.name).toBe('broken-meta')
+    })
+  })
+
+  describe('uploadAgent', () => {
+    const LOCAL_ID = 'breeding-helper'
+    async function makeLocalPreset(root: string, options: { uploaded?: boolean } = {}) {
+      await mkdir(join(root, LOCAL_ID))
+      await writeFile(
+        join(root, LOCAL_ID, 'agent.cordis.yml'),
+        "- id: persona\n  name: '@deepseek-ai/dsh-persona'\n  config:\n    prefix: |-\n      你是育种助手。\n"
+      )
+      await writeFile(join(root, LOCAL_ID, 'preset.yml'), 'name: "育种小助手"\ndescription: "本地创造"\n')
+      if (options.uploaded) {
+        await writeFile(
+          join(root, LOCAL_ID, 'uploaded-agent.json'),
+          JSON.stringify({
+            source: 'agent_platform_upload', agentId: AGENT_UUID, version: 1,
+            uploadedAt: '2026-09-24T08:00:00Z', serverUrl: 'http://localhost:3002'
+          })
+        )
+      }
+    }
+
+    it('uploads persona prompt and metadata, then persists the mapping', async () => {
+      const root = await tempPresetRoot()
+      await makeLocalPreset(root)
+      const { auth, stub } = await loggedInFixture()
+      const store = new EnterpriseAgentStore({ presetRoot: root })
+      const result = await store.uploadAgent(auth, LOCAL_ID)
+      expect(result).toEqual({ ok: true, agentId: OTHER_UUID, version: 1 })
+      const post = stub.calls.find((call) => call.url.endsWith('/api/agents/upload'))
+      expect(JSON.parse(String(post?.init?.body))).toEqual({
+        name: '育种小助手', description: '本地创造', system_prompt: '你是育种助手。'
+      })
+      const mapping = JSON.parse(await readFile(join(root, LOCAL_ID, 'uploaded-agent.json'), 'utf8'))
+      expect(mapping).toMatchObject({ source: 'agent_platform_upload', agentId: OTHER_UUID, version: 1 })
+      const list = await store.listLocalPresets()
+      expect(list.ok && list.presets[0]?.uploaded?.agentId).toBe(OTHER_UUID)
+    })
+
+    it('sends agent_id for updates when a mapping exists', async () => {
+      const root = await tempPresetRoot()
+      await makeLocalPreset(root, { uploaded: true })
+      const { auth, stub } = await loggedInFixture({
+        upload: () => envelope({ id: AGENT_UUID, version: 2 })
+      })
+      const store = new EnterpriseAgentStore({ presetRoot: root })
+      await expect(store.uploadAgent(auth, LOCAL_ID)).resolves.toEqual({ ok: true, agentId: AGENT_UUID, version: 2 })
+      const post = stub.calls.find((call) => call.url.endsWith('/api/agents/upload'))
+      expect(JSON.parse(String(post?.init?.body))).toMatchObject({ agent_id: AGENT_UUID })
+    })
+
+    it('falls back to create when the mapped agent was deleted on the platform (404)', async () => {
+      const root = await tempPresetRoot()
+      await makeLocalPreset(root, { uploaded: true })
+      let calls = 0
+      const { auth, stub } = await loggedInFixture({
+        upload: () => {
+          calls += 1
+          return calls === 1
+            ? new Response(JSON.stringify({ code: 404, success: false, message: '智能体不存在' }))
+            : envelope({ id: OTHER_UUID, version: 1 })
+        }
+      })
+      const store = new EnterpriseAgentStore({ presetRoot: root })
+      await expect(store.uploadAgent(auth, LOCAL_ID)).resolves.toEqual({ ok: true, agentId: OTHER_UUID, version: 1 })
+      const bodies = stub.calls
+        .filter((call) => call.url.endsWith('/api/agents/upload'))
+        .map((call) => JSON.parse(String(call.init?.body)))
+      expect(bodies[0]).toMatchObject({ agent_id: AGENT_UUID })
+      expect(bodies[1]).not.toHaveProperty('agent_id')
+    })
+
+    it('surfaces business failure messages', async () => {
+      const root = await tempPresetRoot()
+      await makeLocalPreset(root)
+      const { auth } = await loggedInFixture({
+        upload: () => new Response(JSON.stringify({ code: 403, success: false, message: '上传智能体需要属于一个租户的账号' }))
+      })
+      const store = new EnterpriseAgentStore({ presetRoot: root })
+      await expect(store.uploadAgent(auth, LOCAL_ID)).resolves.toEqual({
+        ok: false, code: 'unknown', message: '上传智能体需要属于一个租户的账号'
+      })
+    })
+
+    it('rejects invalid preset ids and presets without a persona prompt', async () => {
+      const root = await tempPresetRoot()
+      await makeLocalPreset(root)
+      const { auth } = await loggedInFixture()
+      const store = new EnterpriseAgentStore({ presetRoot: root })
+      await expect(store.uploadAgent(auth, `nkyz-${AGENT_UUID}`)).resolves.toMatchObject({ ok: false, code: 'invalid' })
+      await mkdir(join(root, 'no-persona'))
+      await writeFile(join(root, 'no-persona', 'agent.cordis.yml'), "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n")
+      await expect(store.uploadAgent(auth, 'no-persona')).resolves.toMatchObject({
+        ok: false, code: 'invalid', message: expect.stringContaining('persona')
+      })
     })
   })
 })

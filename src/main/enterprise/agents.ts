@@ -8,6 +8,7 @@ import type {
   AgentInstallResult,
   AgentListResult,
   AgentUninstallResult,
+  AgentUploadResult,
   EnterpriseAgentFailureCode,
   InstalledPlatformAgent,
   LocalPresetListResult,
@@ -15,7 +16,7 @@ import type {
   PlatformAgentSummary,
   UploadedAgentLink
 } from '../../shared/enterprise-agents'
-import { JS_TAG } from '../../shared/persona-extract'
+import { extractPersonaPrompt, JS_TAG } from '../../shared/persona-extract'
 
 /** 与 harness dsh-agent-presets 的 PRESET_ID 保持一致（lib/index.js:105）。 */
 const PRESET_ID = /^[a-z0-9][a-z0-9-]*$/
@@ -493,6 +494,69 @@ export class EnterpriseAgentStore {
     } catch {
       return null
     }
+  }
+
+  /**
+   * 上传本地 preset 到平台（上传即发布）：persona 提示词 + 元数据 → POST
+   * /api/agents/upload；已有映射走更新（version+1），平台侧已被管理员删除
+   * （404 包络）时回退为重新创建（新 id，version 从 1 起）。
+   */
+  async uploadAgent(auth: EnterpriseAuth, presetId: string): Promise<AgentUploadResult> {
+    if (typeof presetId !== 'string' || !PRESET_ID.test(presetId) || presetId.startsWith(PLATFORM_PRESET_PREFIX)) {
+      return { ok: false, code: 'invalid', message: '该智能体不支持上传' }
+    }
+    const dir = join(this.#presetRoot, presetId)
+    let composition: string
+    try {
+      composition = await readFile(join(dir, COMPOSITION_FILE), 'utf8')
+    } catch {
+      return { ok: false, code: 'invalid', message: '未找到该智能体的组合文件' }
+    }
+    const persona = extractPersonaPrompt(composition)
+    if (persona.prompt === null) {
+      const why = persona.reason === 'parse-error' ? '组合文件解析失败' : '组合文件中没有可用的 persona 提示词'
+      return { ok: false, code: 'invalid', message: `${why}，无法上传` }
+    }
+    const meta = await readPresetMetadata(dir, presetId)
+    if (meta.name.trim().length === 0 || meta.name.length > 64) {
+      return { ok: false, code: 'invalid', message: '智能体名称为空或超过 64 字，请先在 preset.yml 里修正' }
+    }
+    const link = await this.#readUploadedLink(dir)
+    const payload: Record<string, unknown> = {
+      name: meta.name,
+      description: meta.description,
+      system_prompt: persona.prompt
+    }
+    if (link) payload.agent_id = link.agentId
+    let result = await auth.apiPost('/api/agents/upload', payload)
+    if (result.status === 'error' && result.code === 404 && link) {
+      delete payload.agent_id
+      result = await auth.apiPost('/api/agents/upload', payload)
+    }
+    if (result.status !== 'ok') {
+      return mapApiFailure(result, auth.getServerUrl(), '上传智能体失败')
+    }
+    const data =
+      typeof result.data === 'object' && result.data !== null ? (result.data as Record<string, unknown>) : {}
+    const agentId = text(data.id)
+    if (!agentId) {
+      return { ok: false, code: 'invalid', message: '平台返回的上传结果不完整' }
+    }
+    const manifest: UploadedManifest = {
+      source: 'agent_platform_upload',
+      agentId,
+      version: versionOf(data.version),
+      uploadedAt: new Date().toISOString(),
+      serverUrl: auth.getServerUrl()
+    }
+    try {
+      await writeFile(join(dir, UPLOADED_FILE), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+    } catch (error) {
+      // 映射写不进只影响下次走更新分支（会退化为新建），上传本身已成功
+      this.#log(`[enterprise] upload mapping persist failed for ${presetId}: ${errorMessage(error)}`)
+    }
+    this.#log(`[enterprise] uploaded local preset ${presetId} as agent ${agentId} (v${manifest.version ?? '?'})`)
+    return { ok: true, agentId, version: manifest.version }
   }
 
   async uninstallAgent(presetId: string): Promise<AgentUninstallResult> {
