@@ -30,10 +30,9 @@ export function extractPersonaPrompt(source: string): ExtractedPersona {
   const document: Document = parseDocument(body, { customTags: [JS_TAG] })
   if (document.errors.length > 0) return { prompt: null, reason: 'parse-error' }
   const stack = new Set<Node>()
-  let found: string | null = null
-  const walk = (node: Node | null, ancestorDisabled: boolean): void => {
+  const walk = (node: Node | null, ancestorDisabled: boolean): string | null => {
     const seq = resolveNode(node, document, stack)
-    if (!isSeq(seq) || stack.has(seq)) return
+    if (!isSeq(seq) || stack.has(seq)) return null
     stack.add(seq)
     for (const item of seq.items) {
       const row = resolveNode(item, document, stack)
@@ -42,20 +41,24 @@ export function extractPersonaPrompt(source: string): ExtractedPersona {
       const rowDisabled = ancestorDisabled || staticallyDisabled(row.get('disabled', true), document, stack)
       const config = resolveNode(row.get('config', true), document, stack)
       if (
-        found === null &&
         !rowDisabled &&
         rowName(row as YAMLMap, document, stack) === PERSONA_PACKAGE &&
         isMap(config)
       ) {
         const prefix = scalarString(resolveNode((config as YAMLMap).get('prefix', true), document, stack))
-        if (prefix !== undefined) found = prefix
+        // 命中即整栈返回；stack 残留随本次提取一起丢弃，无需逐层清理
+        if (prefix !== undefined) return prefix
       }
-      if (isSeq(config)) walk(config, rowDisabled)
+      if (isSeq(config)) {
+        const nested = walk(config, rowDisabled)
+        if (nested !== null) return nested
+      }
       stack.delete(row)
     }
     stack.delete(seq)
+    return null
   }
-  walk(document.contents, false)
+  const found = walk(document.contents, false)
   if (found === null) return { prompt: null, reason: 'no-persona' }
   const prompt = found.trim()
   if (prompt.length === 0) return { prompt: null, reason: 'empty-prompt' }
