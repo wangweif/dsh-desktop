@@ -11,6 +11,8 @@ export interface PlatformAgentSummary {
   /** 平台发布版本号；旧版平台未下发时为 null（更新检测退化为 updatedAt） */
   version: number | null
   updatedAt: string | null
+  /** 创建者显示名（平台侧 nickname 优先回退 username）；旧版平台未下发时为 null */
+  creatorName: string | null
 }
 
 export interface InstalledPlatformAgent {

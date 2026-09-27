@@ -346,7 +346,8 @@ export class EnterpriseAgentStore {
         model: text(source.model),
         recommendedQuestions: questions,
         version: versionOf(source.version),
-        updatedAt: isoTimeOf(source.updated_at)
+        updatedAt: isoTimeOf(source.updated_at),
+        creatorName: text(source.creator_name)
       })
     }
     return { ok: true, agents }

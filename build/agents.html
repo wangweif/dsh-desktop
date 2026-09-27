@@ -274,6 +274,7 @@
         installedAt: locale === 'zh' ? '下载于' : 'Downloaded',
         unauthorized: locale === 'zh' ? '登录已过期，请返回工作台重新登录' : 'Session expired. Go back and sign in again.',
         model: locale === 'zh' ? '模型' : 'Model',
+        creator: locale === 'zh' ? '创建者' : 'Author',
         versionPrefix: 'v'
       }
       document.title = locale === 'zh' ? '平台智能体 · 农科小智智能体' : 'Platform agents · Nongke Xiaozhi'
@@ -361,10 +362,10 @@
         name.className = 'name'
         name.textContent = agent.name
         titleRow.appendChild(name)
-        if (status.local && status.local.version !== null) {
+        if (agent.version !== null) {
           const version = document.createElement('span')
           version.className = 'version'
-          version.textContent = `${TEXT.versionPrefix}${status.local.version}`
+          version.textContent = `${TEXT.versionPrefix}${agent.version}`
           titleRow.appendChild(version)
         }
         card.appendChild(titleRow)
@@ -379,6 +380,12 @@
           model.className = 'model'
           model.textContent = `${TEXT.model}: ${agent.model}`
           card.appendChild(model)
+        }
+        if (agent.creatorName) {
+          const creator = document.createElement('div')
+          creator.className = 'model'
+          creator.textContent = `${TEXT.creator}: ${agent.creatorName}`
+          card.appendChild(creator)
         }
         const statusNode = document.createElement('div')
         statusNode.className = 'status'
