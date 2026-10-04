@@ -3678,7 +3678,9 @@ async function bootstrap(): Promise<void> {
         // launch does not treat this intentional update as an unclean-exit.
         desktopDiagnostics?.markCleanExit()
         stopUpdateManager()
-      }
+      },
+      // 升级源跟随企业服务器地址；restore 完成前先兜底生产默认地址
+      getUpdateBase: () => enterpriseAuth?.getServerUrl() ?? DEFAULT_ENTERPRISE_SERVER_URL
     })
   }
 }

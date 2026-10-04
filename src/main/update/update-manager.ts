@@ -1,8 +1,8 @@
-import { checkDesktopUpdate } from '../desktop-service'
-import { isPrereleaseVersion, isVersion } from '../desktop-service/service'
+import { isVersion } from '../desktop-service/service'
 import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron'
 import electronUpdater from 'electron-updater'
 import type { UpdateStatus } from '../../shared/contracts'
+import { DEFAULT_ENTERPRISE_SERVER_URL } from '../enterprise/auth'
 import {
   AUTO_INSTALL_ON_APP_QUIT,
   shouldCheckAfterResume,
@@ -26,7 +26,7 @@ import {
   archiveFeedUrl,
   compareVersions,
   fetchAvailableReleases,
-  STABLE_FEED_URL
+  stableFeedUrl
 } from './version-catalog'
 
 const { autoUpdater } = electronUpdater
@@ -34,6 +34,8 @@ const TRANSIENT_STATUS_MS = 8_000
 
 let status = initialUpdateStatus(app.getVersion())
 let prepareToInstall: (() => Promise<void>) | undefined
+// IPC 在 startUpdateManager 之前注册；兜底默认服务器，避免启动初期悬空。
+let getUpdateBase: () => string = () => DEFAULT_ENTERPRISE_SERVER_URL
 let startupTimer: NodeJS.Timeout | undefined
 let intervalTimer: NodeJS.Timeout | undefined
 let resetTimer: NodeJS.Timeout | undefined
@@ -61,7 +63,9 @@ export function registerUpdateHandlers(): void {
   ipcMain.handle('updates:install', () => installDownloadedUpdate())
   ipcMain.handle('updates:skip', (_event, version: unknown) => skipUpdate(version))
   ipcMain.handle('updates:download', () => downloadAvailableUpdate())
-  ipcMain.handle('updates:list-versions', () => fetchAvailableReleases(app.getVersion()))
+  ipcMain.handle('updates:list-versions', () =>
+    fetchAvailableReleases(getUpdateBase(), app.getVersion())
+  )
   ipcMain.handle('updates:install-version', (_event, version: unknown) =>
     installSpecificVersion(version)
   )
@@ -94,8 +98,12 @@ export function skipUpdate(version: unknown): UpdateStatus {
   return getUpdateStatus()
 }
 
-export function startUpdateManager(options: { prepareToInstall: () => Promise<void> }): void {
+export function startUpdateManager(options: {
+  prepareToInstall: () => Promise<void>
+  getUpdateBase: () => string
+}): void {
   prepareToInstall = options.prepareToInstall
+  getUpdateBase = options.getUpdateBase
   if (started) return
   started = true
 
@@ -138,18 +146,12 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
   lastCheckedAt = Date.now()
   selectedUpdateVersion = undefined
   checkPromise = (async () => {
-    const policy = await checkDesktopUpdate()
-    if (!policy.updateAvailable) {
-      transition({ type: 'not-available' })
-      scheduleReset()
-      return
-    }
-    selectedUpdateVersion = policy.version
-    autoUpdater.setFeedURL({ provider: 'generic', url: policy.feedUrl })
-    autoUpdater.allowPrerelease = isPrereleaseVersion(policy.version)
+    // 每次检查取当前企业服务器地址：改服务器后下次检查自动跟随，无需重启。
+    // 版本是否更新由 electron-updater 对 feed 的 semver 比较决定，stable 优先
+    // 由发版中心 latest_published 保证，客户端不做第二道灰度决策。
+    autoUpdater.setFeedURL({ provider: 'generic', url: stableFeedUrl(getUpdateBase()) })
     autoUpdater.allowDowngrade = false
-    const result = await autoUpdater.checkForUpdates()
-    if (result?.updateInfo.version !== policy.version) throw new Error('Update archive does not match the selected version')
+    await autoUpdater.checkForUpdates()
   })()
 
   try {
@@ -199,9 +201,8 @@ export async function installSpecificVersion(version: unknown): Promise<UpdateSt
 
   selectedUpdateVersion = version
   pendingDowngrade = compareVersions(version, app.getVersion()) < 0
-  autoUpdater.setFeedURL({ provider: 'generic', url: archiveFeedUrl(version) })
+  autoUpdater.setFeedURL({ provider: 'generic', url: archiveFeedUrl(getUpdateBase(), version) })
   autoUpdater.allowDowngrade = true
-  autoUpdater.allowPrerelease = isPrereleaseVersion(version)
   manualCheck = true
   transition({ type: 'check', manual: true })
   lastCheckedAt = Date.now()
@@ -220,10 +221,11 @@ export async function installSpecificVersion(version: unknown): Promise<UpdateSt
     scheduleReset()
   } finally {
     checkPromise = undefined
-    autoUpdater.setFeedURL({ provider: 'generic', url: STABLE_FEED_URL })
-    autoUpdater.allowDowngrade = false
+    selectedUpdateVersion = undefined
     pendingDowngrade = false
-    autoUpdater.allowPrerelease = false
+    autoUpdater.allowDowngrade = false
+    // 恢复当前企业服务器对应的 stable feed；base 在流程中变化时也恢复到新地址
+    autoUpdater.setFeedURL({ provider: 'generic', url: stableFeedUrl(getUpdateBase()) })
   }
 
   return getUpdateStatus()
@@ -261,7 +263,6 @@ function configureUpdater(): void {
   // `finally` may not run if the process is killed mid-flow.
   autoUpdater.allowDowngrade = false
   autoUpdater.autoInstallOnAppQuit = AUTO_INSTALL_ON_APP_QUIT
-  autoUpdater.allowPrerelease = false
   autoUpdater.logger = {
     info: (...args: unknown[]) => console.info('[updater]', ...args),
     warn: (...args: unknown[]) => console.warn('[updater]', ...args),
@@ -273,7 +274,9 @@ function configureUpdater(): void {
     transition({ type: 'check', manual: status.manual })
   )
   autoUpdater.on('update-available', (info) => {
-    if (info.version !== selectedUpdateVersion) {
+    // 等值校验只在「安装指定版本」钉版时执行；stable 检查的版本来源就是 feed，
+    // 没有第二个决策来源可对账。
+    if (selectedUpdateVersion !== undefined && info.version !== selectedUpdateVersion) {
       transition({ type: 'error', message: 'Update archive does not match the selected version' })
       return
     }

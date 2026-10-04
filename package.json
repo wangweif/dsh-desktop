@@ -470,7 +470,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://dshdesktop.com/updates/latest/"
+        "url": "https://ai.touchit.com.cn/agent/api/desktop/updates/latest/"
       }
     ],
     "detectUpdateChannel": false,
@@ -490,13 +490,7 @@
     },
     "win": {
       "icon": "build/icon.ico",
-      "verifyUpdateCodeSignature": true,
-      "signtoolOptions": {
-        "publisherName": "Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.",
-        "signingHashAlgorithms": [
-          "sha256"
-        ]
-      },
+      "verifyUpdateCodeSignature": false,
       "requestedExecutionLevel": "asInvoker",
       "target": [
         {

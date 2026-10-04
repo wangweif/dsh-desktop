@@ -4,18 +4,35 @@ import {
   compareVersions,
   fetchAvailableReleases,
   parseVersionIndex,
-  STABLE_FEED_URL,
-  VERSION_INDEX_URL
+  stableFeedUrl,
+  versionIndexUrl
 } from '../src/main/update/version-catalog'
 
-describe('version-catalog constants', () => {
-  it('points the stable feed and index at the dshdesktop domain', () => {
-    expect(STABLE_FEED_URL).toBe('https://dshdesktop.com/updates/latest/')
-    expect(VERSION_INDEX_URL).toBe('https://dshdesktop.com/updates/versions.json')
+describe('version-catalog feed urls', () => {
+  it('derives the stable feed and index from the enterprise server base', () => {
+    // 生产：BASE_PATH=/agent 子路径部署
+    expect(stableFeedUrl('https://ai.touchit.com.cn/agent')).toBe(
+      'https://ai.touchit.com.cn/agent/api/desktop/updates/latest/'
+    )
+    expect(versionIndexUrl('https://ai.touchit.com.cn/agent')).toBe(
+      'https://ai.touchit.com.cn/agent/api/desktop/updates/versions.json'
+    )
+    // 本地开发：无前缀
+    expect(stableFeedUrl('http://localhost:3002')).toBe(
+      'http://localhost:3002/api/desktop/updates/latest/'
+    )
+  })
+
+  it('normalizes trailing slashes on the base', () => {
+    expect(stableFeedUrl('https://ai.touchit.com.cn/agent//')).toBe(
+      'https://ai.touchit.com.cn/agent/api/desktop/updates/latest/'
+    )
   })
 
   it('builds a per-version archive feed url with a trailing slash', () => {
-    expect(archiveFeedUrl('1.2.3')).toBe('https://dshdesktop.com/updates/archive/1.2.3/')
+    expect(archiveFeedUrl('https://ai.touchit.com.cn/agent', '1.2.3')).toBe(
+      'https://ai.touchit.com.cn/agent/api/desktop/updates/archive/1.2.3/'
+    )
   })
 })
 
@@ -54,14 +71,14 @@ describe('parseVersionIndex', () => {
   it('keeps well-formed entries and drops the rest', () => {
     const raw = {
       versions: [
-        { version: '1.2.3', tag: 'v1.2.3', archiveUrl: 'https://dshdesktop.com/updates/archive/1.2.3/' },
+        { version: '1.2.3', tag: 'v1.2.3', archiveUrl: 'https://ai.touchit.com.cn/agent/api/desktop/updates/archive/1.2.3/' },
         { version: '', tag: 'v0', archiveUrl: 'x' },
         { nope: true },
         42
       ]
     }
     expect(parseVersionIndex(raw)).toEqual([
-      { version: '1.2.3', tag: 'v1.2.3', archiveUrl: 'https://dshdesktop.com/updates/archive/1.2.3/' }
+      { version: '1.2.3', tag: 'v1.2.3', archiveUrl: 'https://ai.touchit.com.cn/agent/api/desktop/updates/archive/1.2.3/' }
     ])
   })
 
@@ -80,25 +97,40 @@ describe('fetchAvailableReleases', () => {
       { version: '1.1.0', tag: 'v1.1.0', archiveUrl: 'c' }
     ]
   }
+  const base = 'https://ai.touchit.com.cn/agent'
   const ok = () =>
     Promise.resolve({ ok: true, json: () => Promise.resolve(index) } as Response)
 
+  it('requests the version index derived from the base', async () => {
+    const calls: string[] = []
+    const tracking = (url: string) => {
+      calls.push(url)
+      return ok()
+    }
+    await fetchAvailableReleases(base, '1.1.0', tracking as unknown as typeof fetch)
+    expect(calls).toEqual([versionIndexUrl(base)])
+  })
+
   it('drops the current version and sorts descending', async () => {
-    const releases = await fetchAvailableReleases('1.1.0', ok as unknown as typeof fetch)
+    const releases = await fetchAvailableReleases(
+      base,
+      '1.1.0',
+      ok as unknown as typeof fetch
+    )
     expect(releases.map((r) => r.version)).toEqual(['1.2.0', '1.0.0'])
   })
 
   it('throws when the request fails', async () => {
     const bad = () => Promise.resolve({ ok: false, status: 503 } as Response)
     await expect(
-      fetchAvailableReleases('1.1.0', bad as unknown as typeof fetch)
+      fetchAvailableReleases(base, '1.1.0', bad as unknown as typeof fetch)
     ).rejects.toThrow()
   })
 
   it('throws when the network rejects', async () => {
     const boom = () => Promise.reject(new Error('offline'))
     await expect(
-      fetchAvailableReleases('1.1.0', boom as unknown as typeof fetch)
+      fetchAvailableReleases(base, '1.1.0', boom as unknown as typeof fetch)
     ).rejects.toThrow('offline')
   })
 })

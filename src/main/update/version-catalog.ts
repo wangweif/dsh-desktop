@@ -2,13 +2,26 @@ import type { AvailableRelease } from '../../shared/contracts'
 
 export type { AvailableRelease }
 
-export const STABLE_FEED_URL = 'https://dshdesktop.com/updates/latest/'
-export const VERSION_INDEX_URL = 'https://dshdesktop.com/updates/versions.json'
-
 const INDEX_TIMEOUT_MS = 8_000
 
-export function archiveFeedUrl(version: string): string {
-  return `https://dshdesktop.com/updates/archive/${version}/`
+/**
+ * 更新源跟随企业服务器地址：{serverUrl}/api/desktop/updates（agent_platform
+ * 桌面端发版中心）。改企业服务器后，下次检查自动使用新地址。
+ */
+function trimBase(base: string): string {
+  return base.replace(/\/+$/, '')
+}
+
+export function stableFeedUrl(base: string): string {
+  return `${trimBase(base)}/api/desktop/updates/latest/`
+}
+
+export function versionIndexUrl(base: string): string {
+  return `${trimBase(base)}/api/desktop/updates/versions.json`
+}
+
+export function archiveFeedUrl(base: string, version: string): string {
+  return `${trimBase(base)}/api/desktop/updates/archive/${version}/`
 }
 
 /** Split "1.2.3-rc.1" into ([1,2,3], "rc.1"). Non-numeric segments read as 0. */
@@ -94,13 +107,14 @@ export function parseVersionIndex(raw: unknown): AvailableRelease[] {
 }
 
 export async function fetchAvailableReleases(
+  base: string,
   currentVersion: string,
   fetchImpl: typeof fetch = globalThis.fetch
 ): Promise<AvailableRelease[]> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), INDEX_TIMEOUT_MS)
   try {
-    const response = await fetchImpl(VERSION_INDEX_URL, { signal: controller.signal })
+    const response = await fetchImpl(versionIndexUrl(base), { signal: controller.signal })
     if (!response.ok) {
       throw new Error(`Version index request failed: ${response.status}`)
     }

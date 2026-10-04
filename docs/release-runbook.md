@@ -43,3 +43,17 @@ Prepare the local runner once:
 The workflow pins Jsign 7.5 by SHA-256 and uses the SafeNet `ETOKEN` store, SHA-256 signing, and a DigiCert RFC 3161 timestamp. GitHub injects the PIN only into the signing step. The step copies it to a mode-`600` temporary file, removes it from the shell environment, and deletes the file when the step exits. The workflow never prints the PIN or passes it as a command-line argument.
 
 The configured update publisher is `Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.`, taken from the signed v0.9.2 installer. If the signing certificate changes, update `build.win.signtoolOptions.publisherName` only after checking the new certificate subject and the updater's signature verification on an installed Windows build. After a tag release succeeds, verify that the Windows installer shows the expected publisher and a valid RFC 3161 timestamp in its Digital Signatures properties. Never reuse a published tag; fix the issue and release a new version.
+
+## 发版中心发布流程（农科小智智能体现行发布路径）
+
+本 fork 的客户端在线升级已切换到 agent_platform 桌面端发版中心（升级源跟随客户端「企业服务器地址」：`{serverUrl}/api/desktop/updates`）。上文 GitHub Release / ModelScope / 灰度配置等流程为上游遗留，待退役。
+
+发布步骤：
+
+1. 本地打包：`npm run package:mac`（或 `package:win` / 双平台）。产物在 `dist/`，须包含 `latest-mac.yml` / `latest.yml`、安装包（zip/dmg/exe）与 `.blockmap`。
+2. 以 super_admin 登录平台管理后台，进入「桌面端发版」页（`/admin/desktop-releases`），上传该版本**全量产物**（含 `latest*.yml`），登记版本号与更新说明，发布（publish）。
+3. 发布顺序规则：**先把新版本上传并 publish，再分发安装包**。`latest/{file}` 在无已发布版本时返回 404，客户端检查会进入 error 状态。
+4. 存量旧客户端仍指向上游 `dshdesktop.com` 更新源，无法在线迁移——首个自带发版中心地址的客户端需一次性手动安装完成「引导期」。
+5. 验证：`curl -s https://ai.touchit.com.cn/agent/api/desktop/updates/versions.json` 能列出该版本；客户端「关于 → 检查更新」能提示并完成 下载→重启安装。
+
+未签名说明：当前安装包暂不签名（Windows 已关闭更新包签名校验）。mac 未签名 zip 的 Squirrel 安装见计划中的 E2E 验证（MacUpdater 只校验 sha512，不校验代码签名）；Windows 未签名安装会触发 SmartScreen 提示，用户选择「仍要运行」。恢复签名时需同步恢复 `build.win.signtoolOptions` 与 `verifyUpdateCodeSignature`。

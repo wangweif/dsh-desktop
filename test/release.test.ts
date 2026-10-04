@@ -3,6 +3,8 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_ENTERPRISE_SERVER_URL } from '../src/main/enterprise/auth'
+import { stableFeedUrl } from '../src/main/update/version-catalog'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
@@ -283,7 +285,7 @@ describe('GitHub release contract', () => {
       dependencies: Record<string, string>
       build: {
         publish: Array<{ provider: string; url?: string; owner?: string; repo?: string }>
-        win: { verifyUpdateCodeSignature: boolean; signtoolOptions: { publisherName: string } }
+        win: { verifyUpdateCodeSignature: boolean }
       }
     }
     const workflow = await readFile(
@@ -292,11 +294,12 @@ describe('GitHub release contract', () => {
     )
 
     expect(packageJson.dependencies['electron-updater']).toBeTruthy()
+    // 派生式断言：publish.url 必须与运行时默认升级源同源，防两处漂移
     expect(packageJson.build.publish).toEqual([
-      { provider: 'generic', url: 'https://dshdesktop.com/updates/latest/' }
+      { provider: 'generic', url: stableFeedUrl(DEFAULT_ENTERPRISE_SERVER_URL) }
     ])
-    expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(true)
-    expect(packageJson.build.win.signtoolOptions.publisherName).toBe('Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.')
+    // 暂不签名：运行时不校验 Windows 更新包签名
+    expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(false)
     for (const asset of [
       'latest-mac-arm64.yml',
       'latest-mac-x64.yml',
@@ -595,18 +598,6 @@ describe('prerelease parity workflow', () => {
     const yml = await load()
     expect(yml).toContain('SMOKE_EXE')
     expect(yml).toContain('SMOKE_USERDATA')
-  })
-})
-
-describe('rollback catalog publication', () => {
-  it('archives each release and rebuilds the version index', async () => {
-    const yml = await readFile(
-      path.join(projectRoot, '.github/workflows/release.yml'),
-      'utf8'
-    )
-    expect(yml).toContain('releases/archive/')
-    expect(yml).toContain('scripts/build-version-index.mjs')
-    expect(yml).toContain('releases/versions.json')
   })
 })
 
