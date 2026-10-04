@@ -12,28 +12,22 @@ window.__ModuleLoader__.load({
     const UNBOUND_KEY = '\0dsh-doc-templates-unbound'
 
     const zh = {
-      mode: '模板',
-      panelTitle: '选择文档模板',
-      close: '关闭',
-      all: '全部',
-      report: '文档',
-      sheet: '表格',
+      modeWord: 'Word',
+      modeExcel: 'Excel',
+      panelTitleWord: '选择 Word 模板',
+      panelTitleExcel: '选择 Excel 模板',
       retry: '重新加载',
-      loadTimeout: '模板加载超时，请重试',
       empty: '该分类下暂无模板',
       selected: '已选中',
       remove: '取消选择模板',
       badgePrefix: '已选模板：'
     }
     const en = {
-      mode: 'Templates',
-      panelTitle: 'Choose a document template',
-      close: 'Close',
-      all: 'All',
-      report: 'Documents',
-      sheet: 'Spreadsheets',
+      modeWord: 'Word',
+      modeExcel: 'Excel',
+      panelTitleWord: 'Choose a Word template',
+      panelTitleExcel: 'Choose an Excel template',
       retry: 'Reload',
-      loadTimeout: 'Template loading timed out, retry',
       empty: 'No templates in this category',
       selected: 'Selected',
       remove: 'Remove selected template',
@@ -44,12 +38,12 @@ window.__ModuleLoader__.load({
 .dtpl-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 12px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-secondary); font-size: 12px; font-weight: 600; cursor: pointer; }
 .dtpl-chip:hover { border-color: var(--dsw-alias-label-caption); }
 .dtpl-chip[data-selected="1"] { border-color: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-state-business-primary); }
+.dtpl-chip-mark { width: 8px; height: 8px; border-radius: 2px; }
+.dtpl-chip-mark.word { background: #2b579a; }
+.dtpl-chip-mark.excel { background: #217346; }
 .dtpl-panel { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding: 14px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 14px; background: var(--dsw-alias-bg-base); max-height: calc(100dvh - 178px); overflow: hidden; }
 .dtpl-panel-head { display: flex; align-items: center; justify-content: space-between; }
 .dtpl-panel-title { font-size: 13px; font-weight: 650; color: var(--dsw-alias-label-primary); }
-.dtpl-tabs { display: flex; gap: 6px; }
-.dtpl-tab { padding: 3px 10px; border-radius: 999px; border: 1px solid transparent; background: none; color: var(--dsw-alias-label-secondary); font-size: 12px; cursor: pointer; }
-.dtpl-tab[data-active="1"] { border-color: var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); }
 .dtpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
 .dtpl-card { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 12px; background: var(--dsw-alias-bg-module-platform); cursor: pointer; text-align: left; }
 .dtpl-card:hover { border-color: var(--dsw-alias-label-caption); }
@@ -88,7 +82,7 @@ window.__ModuleLoader__.load({
         if (!listeners.has(key)) listeners.set(key, new Set())
         return listeners.get(key)
       }
-      const blank = () => ({ loading: false, templates: [], selectedId: null, panelOpen: false, error: null, revision: 0 })
+      const blank = () => ({ loading: false, templates: [], selectedId: null, panelKind: null, error: null, revision: 0 })
       return {
         get(key) {
           if (!states.has(key)) states.set(key, blank())
@@ -113,7 +107,7 @@ window.__ModuleLoader__.load({
             await client.call('template-select', { templateId: staged.selectedId })
           }
           this.update(sessionId, { selectedId: staged.selectedId ?? bound.selectedId })
-          if (staged.selectedId !== null) this.update(UNBOUND_KEY, { selectedId: null, panelOpen: false })
+          if (staged.selectedId !== null) this.update(UNBOUND_KEY, { selectedId: null, panelKind: null })
         }
       }
     }
@@ -188,6 +182,10 @@ window.__ModuleLoader__.load({
               h('div', { className: 'dtpl-bar w2' }), h('div', { className: 'dtpl-bar w4' })))
     }
 
+    /** catalog 下发 {zh,en} 双语对象；按页面语言取文本（React child 必须是字符串）。 */
+    const isZh = () => (document.documentElement.lang || 'zh').toLowerCase().startsWith('zh')
+    const locText = (pair) => (pair && typeof pair === 'object' ? (isZh() ? pair.zh : pair.en) : pair) ?? ''
+
     function TemplateCard({ template, selected, t, choose }) {
       return h('button', {
         type: 'button',
@@ -197,32 +195,24 @@ window.__ModuleLoader__.load({
         onClick: () => choose(template.id)
       },
       h(CssPreview, { variant: template.variant }),
-      h('span', { className: 'dtpl-card-name' }, template.name),
-      h('span', { className: 'dtpl-card-desc' }, template.description),
+      h('span', { className: 'dtpl-card-name' }, locText(template.name)),
+      h('span', { className: 'dtpl-card-desc' }, locText(template.description)),
       selected ? h('span', { className: 'dtpl-card-mark' }, `✓ ${t('selected')}`) : null)
     }
 
-    function TemplatePanel({ client, modeKey, t }) {
+    function TemplatePanel({ client, modeKey, t, kind }) {
       const state = useStoreState(modeKey)
-      const [category, setCategory] = React.useState('all')
       React.useEffect(() => {
-        if (state.panelOpen && state.templates.length === 0 && !state.loading && state.error === null) {
+        if (state.panelKind !== null && state.templates.length === 0 && !state.loading && state.error === null) {
           void loadTemplates(modeKey, client)
         }
-      }, [state.panelOpen]) // eslint-disable-line react-hooks/exhaustive-deps
-      if (!state.panelOpen) return null
-      const templates = state.templates.filter((item) => category === 'all' || item.category === category)
-      return h('div', { className: 'dtpl-panel', role: 'dialog', 'aria-label': t('panelTitle') },
+      }, [state.panelKind]) // eslint-disable-line react-hooks/exhaustive-deps
+      if (state.panelKind !== kind) return null
+      const templates = state.templates.filter((item) => item.kind === kind)
+      return h('div', { className: 'dtpl-panel', role: 'dialog', 'aria-label': t(kind === 'word' ? 'panelTitleWord' : 'panelTitleExcel') },
         h('div', { className: 'dtpl-panel-head' },
-          h('span', { className: 'dtpl-panel-title' }, t('panelTitle')),
-          h('div', { className: 'dtpl-tabs' },
-            ['all', 'report', 'sheet'].map((key) => h('button', {
-              key,
-              type: 'button',
-              className: 'dtpl-tab',
-              'data-active': category === key ? '1' : '0',
-              onClick: () => setCategory(key)
-            }, t(key))))),
+          h('span', { className: 'dtpl-panel-title' },
+            t(kind === 'word' ? 'panelTitleWord' : 'panelTitleExcel'))),
         state.error !== null
           ? h('div', { className: 'dtpl-error' },
               h('span', null, state.error),
@@ -255,17 +245,18 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** hero.modeActions：模板 chip。 */
-    function ModeActionChip({ client, modeKey, t }) {
+    /** hero.modeActions：Word / Excel 两个模板 chip（与 PPT 按钮并排）；面板由 dock 出口渲染。 */
+    function KindChip({ modeKey, t, kind }) {
       const state = useStoreState(modeKey)
-      return h(React.Fragment, null,
-        h('button', {
-          type: 'button',
-          className: 'dtpl-chip',
-          'data-selected': state.selectedId !== null ? '1' : '0',
-          onClick: () => store.update(modeKey, { panelOpen: !state.panelOpen })
-        }, `📄 ${t('mode')}`),
-        h(TemplatePanel, { client, modeKey, t }))
+      const open = state.panelKind === kind
+      return h('button', {
+        type: 'button',
+        className: 'dtpl-chip',
+        'data-selected': open || state.selectedId !== null ? '1' : '0',
+        onClick: () => store.update(modeKey, { panelKind: open ? null : kind })
+      },
+      h('span', { className: `dtpl-chip-mark ${kind}`, 'aria-hidden': 'true' }),
+      t(kind === 'word' ? 'modeWord' : 'modeExcel'))
     }
 
     /** input.accessory：空会话输入卡内选中缩略（× 取消）。 */
@@ -277,7 +268,7 @@ window.__ModuleLoader__.load({
       if (template === undefined) return null
       return h('span', { className: 'dtpl-accessory' },
         h(CssPreview, { variant: template.variant }),
-        h('span', null, template.name),
+        h('span', null, locText(template.name)),
         h('button', {
           type: 'button',
           className: 'dtpl-accessory-x',
@@ -294,18 +285,32 @@ window.__ModuleLoader__.load({
       if (state.selectedId === null) return null
       const template = state.templates.find((item) => item.id === state.selectedId)
       if (template === undefined) return null
-      return h('span', { className: 'dtpl-badge' }, `${t('badgePrefix')}${template.name}`)
+      return h('span', { className: 'dtpl-badge' }, `${t('badgePrefix')}${locText(template.name)}`)
     }
 
-    /** hero.dock / composer.dock 双出口共享的面板宿主。 */
-    function ComposerDock({ client, modeKey, t }) {
+    /** 面板宿主（word/excel 面板各自按 panelKind 显隐）。 */
+    function DockBody({ client, modeKey, t }) {
       React.useEffect(() => {
         if (client.bound) void store.adopt(modeKey, client)
       }, [modeKey, client.bound]) // eslint-disable-line react-hooks/exhaustive-deps
-      return h(TemplatePanel, { client, modeKey, t })
+      return h(React.Fragment, null,
+        h(TemplatePanel, { client, modeKey, t, kind: 'word' }),
+        h(TemplatePanel, { client, modeKey, t, kind: 'excel' }))
     }
 
-    const inject = ['connection', 'locale', 'layout']
+    /** hero.dock：无会话时的面板出口（有会话让位给 composer.dock，防双份渲染）。 */
+    function HeroDock(props) {
+      if (props.session != null) return null
+      return h(DockBody, props)
+    }
+
+    /** composer.dock：空会话输入卡下方的面板出口。 */
+    function ComposerDock(props) {
+      if (props.session == null || props.session.blank !== true) return null
+      return h(DockBody, props)
+    }
+
+    const inject = ['connection', 'locale', 'layout', 'slots']
 
     function apply(ctx) {
       ctx.effect(() => {
@@ -322,17 +327,24 @@ window.__ModuleLoader__.load({
         const modeKey = typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : UNBOUND_KEY
         return { client: createClient(connection.rpc, sessionId), modeKey, t }
       }
+      /** hero.modeActions 条目：一次注册渲染 Word + Excel 两个 chip（同 slot 双注册会互相顶掉）。 */
+      function DualKindChips(props) {
+        return h(React.Fragment, null,
+          h(KindChip, { ...props, kind: 'word' }),
+          h(KindChip, { ...props, kind: 'excel' }))
+      }
+
       const seats = [
-        ['conversation.hero.modeActions', ModeActionChip],
-        ['conversation.input.accessory', BlankSessionAccessory],
-        ['conversation.chat.userMessageFooter', LeadingBadge],
-        ['conversation.hero.dock', ComposerDock],
-        ['conversation.composer.dock', ComposerDock]
+        ['conversation.hero.modeActions', 'dsh-doc-templates', DualKindChips],
+        ['conversation.input.accessory', 'dsh-doc-templates', BlankSessionAccessory],
+        ['conversation.chat.userMessageFooter', 'dsh-doc-templates', LeadingBadge],
+        ['conversation.hero.dock', 'dsh-doc-templates', HeroDock],
+        ['conversation.composer.dock', 'dsh-doc-templates', ComposerDock]
       ]
-      for (const [name, Component] of seats) {
+      for (const [name, id, Component] of seats) {
         ctx.slots.inject(name, () => ctx.slots.register({
           name,
-          id: 'dsh-doc-templates',
+          id,
           order: 30,
           locale: NS,
           inject: face
