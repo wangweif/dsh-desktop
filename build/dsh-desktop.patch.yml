@@ -76,3 +76,11 @@
       config:
         resources: !!js process.env.DSH_DESKTOP_OFFICE_RESOURCES
         cli: !!js process.env.DSH_DESKTOP_OFFICE_CLI
+
+# Enterprise platform agents: list/install/uninstall/sync/upload moved out of
+# the Electron shell into a standard client plugin, so the capability travels
+# with the dsh profile. Session credentials stay shell-owned (login gate) and
+# reach the host half through the DSH_HOME session handoff file.
+- insert:
+    - id: dsh-enterprise-agents
+      name: dsh-enterprise-agents

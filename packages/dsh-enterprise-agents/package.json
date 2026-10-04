@@ -1,0 +1,29 @@
+{
+  "name": "dsh-enterprise-agents",
+  "version": "0.1.0",
+  "description": "Enterprise platform agent panel: list, install, uninstall, sync and upload as a standard dsh client plugin.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.js" },
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "dependencies": {
+    "yaml": "^2.8.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}

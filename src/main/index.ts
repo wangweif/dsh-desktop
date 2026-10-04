@@ -24,7 +24,7 @@ import {
 } from 'electron'
 import { clearStaleLoopbackHttpCache } from './cache-maintenance'
 import { DEFAULT_ENTERPRISE_SERVER_URL, EnterpriseAuth, type EnterpriseCredentialCodec } from './enterprise/auth'
-import { EnterpriseAgentStore, registerEnterpriseAgentHandlers } from './enterprise/agents'
+import { writeEnterpriseSessionHandoff } from './enterprise/session-handoff'
 import { registerEnterpriseHandlers, type EnterpriseIpcEvent } from './enterprise/ipc'
 import {
   DEFAULT_HARNESS_PORT,
@@ -1225,24 +1225,6 @@ async function ensureEnterpriseAuthenticated(): Promise<boolean> {
     enterpriseLoginGate = undefined
   })
   return enterpriseLoginGate
-}
-
-async function showEnterpriseAgents(): Promise<void> {
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
-  const navigationVersion = ++mainWindowNavigationVersion
-  window.webContents.stop()
-  await loadDesktopResource(window, desktopResourcePath('agents.html'), {
-    query: {
-      state: JSON.stringify({
-        locale: harnessLocale(),
-        serverUrl: enterpriseAuth?.getServerUrl() ?? DEFAULT_ENTERPRISE_SERVER_URL
-      }),
-      icon: app.isPackaged ? 'icon.png' : 'app-icon.png',
-      theme: harnessThemePreference()
-    }
-  })
-  if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return
-  raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
 }
 
 /**
@@ -3340,7 +3322,13 @@ async function bootstrap(): Promise<void> {
   const enterprise = new EnterpriseAuth({
     storePath: join(app.getPath('userData'), 'enterprise', 'session.json'),
     codec: safeStorageCodec(),
-    log: (line) => console.warn(line)
+    log: (line) => console.warn(line),
+    // 平台会话交接给 harness 插件 dsh-enterprise-agents（host 半以同一 cookie 调平台）
+    onChange: (snapshot) => {
+      void writeEnterpriseSessionHandoff(join(app.getPath('userData'), 'harness'), snapshot).catch((error) =>
+        console.warn(`[enterprise] session handoff write failed: ${error instanceof Error ? error.message : String(error)}`)
+      )
+    }
   })
   enterpriseAuth = enterprise
   // 静默恢复会话；失败（含平台不可达）不打断启动，由登录门禁兜底。
@@ -3399,39 +3387,15 @@ async function bootstrap(): Promise<void> {
       return false
     }
   }
-  const enterpriseAgents = new EnterpriseAgentStore({
-    presetRoot: join(dshHome, '.agent-presets'),
-    log: (line) => runtime.note(line)
-  })
-  // 后台对齐平台分配：不阻塞进主界面，失败不打扰（下次启动再试）
-  const syncEnterpriseAgents = (): void => {
-    if (!enterprise.isAuthenticated()) return
-    void enterpriseAgents
-      .syncAgents(enterprise)
-      .then((outcome) => {
-        if (!outcome.ok || outcome.failed > 0) {
-          runtime.note(
-            `[enterprise] agent sync ${outcome.ok ? `finished with ${outcome.failed} failure(s)` : 'aborted (platform unreachable or signed out)'}`
-          )
-        } else if (outcome.installed + outcome.updated > 0) {
-          runtime.note(
-            `[enterprise] agent sync: ${outcome.installed} installed, ${outcome.updated} updated, ${outcome.skipped} unchanged`
-          )
-        }
-      })
-      .catch((error: unknown) =>
-        runtime.note(`[enterprise] agent sync failed: ${error instanceof Error ? error.message : String(error)}`)
-      )
-  }
-  // 启动会话恢复成功后同步一次；同步本身不进 enterpriseRestore（门禁不等它）
-  void enterpriseRestore.then(() => syncEnterpriseAgents())
+  // 平台智能体的列表/下载/卸载/同步/上传已下沉到 dsh 插件 dsh-enterprise-agents：
+  // 会话经交接文件传递（auth.onChange → session-handoff），同步由插件在
+  // 启动与会话变化时自行执行，壳只保留登录门禁与登录族 IPC。
   registerEnterpriseHandlers(enterpriseIpc, {
     auth: enterprise,
     isTrustedEvent: isTrustedEnterpriseEvent,
     onEnter: () => {
       enterpriseEnterResolver?.()
       enterpriseEnterResolver = undefined
-      syncEnterpriseAgents()
     },
     onQuit: () => {
       app.quit()
@@ -3439,20 +3403,6 @@ async function bootstrap(): Promise<void> {
     onSessionEnded: async () => {
       const url = runtime.snapshot().url
       if (url) await openHarness(url).catch(showUnexpectedError)
-    },
-    log: (line) => runtime.note(line)
-  })
-  registerEnterpriseAgentHandlers(enterpriseIpc, {
-    auth: enterprise,
-    agents: enterpriseAgents,
-    isTrustedEvent: isTrustedEnterpriseEvent,
-    onOpenAgents: () => {
-      void showEnterpriseAgents().catch(showUnexpectedError)
-    },
-    onCloseAgents: async () => {
-      const url = runtime.snapshot().url
-      if (url) await openHarness(url).catch(showUnexpectedError)
-      else await showSplash()
     },
     log: (line) => runtime.note(line)
   })

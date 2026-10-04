@@ -347,4 +347,34 @@ describe('EnterpriseAuth.apiPost', () => {
     const auth = new EnterpriseAuth({ storePath: await tempStorePath() })
     await expect(auth.apiPost('/api/agents/upload', {})).resolves.toEqual({ status: 'unauthorized' })
   })
+
+  it('reports session snapshots through onChange after persist', async () => {
+    const snapshots: Array<{ serverUrl: string; sessionCookie?: string }> = []
+    const stub = createFetchStub((call) => {
+      if (call.url.endsWith('/api/auth/login')) return successLogin()
+      if (call.url.endsWith('/api/auth/me')) return new Response(JSON.stringify(meBody))
+      return new Response('{}')
+    })
+    const auth = new EnterpriseAuth({
+      storePath: await tempStorePath(),
+      fetchImpl: stub.fetch,
+      onChange: (snapshot) => snapshots.push({ ...snapshot })
+    })
+
+    // 未登录前不触发（login 前无 persist）
+    expect(snapshots).toHaveLength(0)
+
+    await auth.login('admin', 'admin')
+    expect(snapshots.at(-1)).toMatchObject({
+      serverUrl: DEFAULT_ENTERPRISE_SERVER_URL,
+      sessionCookie: 'session=signed-token'
+    })
+
+    await auth.logout()
+    expect(snapshots.at(-1)).toEqual({ serverUrl: DEFAULT_ENTERPRISE_SERVER_URL, sessionCookie: undefined })
+
+    // 换服务器作废会话：serverUrl 变化 + 无 cookie
+    await auth.setServerUrl('http://other.test')
+    expect(snapshots.at(-1)).toEqual({ serverUrl: 'http://other.test', sessionCookie: undefined })
+  })
 })

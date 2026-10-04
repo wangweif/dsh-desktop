@@ -13,20 +13,11 @@ import { markWindowsTitlebar, mountWindowsTitlebarLayout } from './windows-title
 import { mountMacosWindowChrome } from './macos-window-chrome'
 import { createHostPathsBridge, HOST_PATHS_BRIDGE } from './host-paths'
 import { initEnterpriseChip, mountEnterpriseChip } from './enterprise-chip'
-import { initEnterpriseAgentsButton, mountEnterpriseAgentsButton } from './enterprise-agents-button'
 import type {
   EnterpriseLoginResult,
   EnterpriseServerUrlResult,
   EnterpriseUser
 } from '../shared/enterprise'
-import type {
-  AgentInstallResult,
-  AgentListResult,
-  AgentUninstallResult,
-  AgentUploadResult,
-  InstalledPlatformAgent,
-  LocalPresetListResult
-} from '../shared/enterprise-agents'
 
 if (process.platform === 'darwin') {
   const dispose = mountMacosWindowChrome(document, listener => {
@@ -168,7 +159,6 @@ function runDomSync(): void {
   placeSafeModeBanner()
   mountMobileButton()
   mountEnterpriseChip()
-  mountEnterpriseAgentsButton()
   if (bootScanSettled) return
   // The boot screen only exists until Harness renders its own UI, and the
   // sidebar appearing is that moment. Past it the selector can never match
@@ -406,7 +396,6 @@ function initializeUi(): void {
   // DOM 就绪后再拉取用户信息：document-start 时 document.head 尚未解析，
   // ensureStyles 挂样式会静默抛错；角标本体由 runDomSync 的挂载循环负责。
   void initEnterpriseChip()
-  void initEnterpriseAgentsButton()
   checkBootFailureInDom()
   domObserver.observe(document.documentElement, {
     childList: true,
@@ -613,6 +602,8 @@ contextBridge.exposeInMainWorld(
   })
 )
 
+// 平台智能体的列表/下载/卸载/上传已下沉为 dsh 插件 dsh-enterprise-agents 的
+// 客户端面板（slots 体系），不再走壳 IPC；此处只保留登录门禁与用户角标所需。
 contextBridge.exposeInMainWorld(
   'dshEnterprise',
   Object.freeze({
@@ -625,20 +616,7 @@ contextBridge.exposeInMainWorld(
     setServerUrl: (url: string): Promise<EnterpriseServerUrlResult> =>
       ipcRenderer.invoke('enterprise:set-server-url', url),
     enter: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:enter'),
-    quit: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:quit'),
-    listAgents: (): Promise<AgentListResult> => ipcRenderer.invoke('enterprise:agents:list'),
-    installedAgents: (): Promise<{ ok: true; agents: InstalledPlatformAgent[] }> =>
-      ipcRenderer.invoke('enterprise:agents:installed'),
-    downloadAgent: (agentId: string): Promise<AgentInstallResult> =>
-      ipcRenderer.invoke('enterprise:agent-download', agentId),
-    uninstallAgent: (presetId: string): Promise<AgentUninstallResult> =>
-      ipcRenderer.invoke('enterprise:agent-uninstall', presetId),
-    listLocalPresets: (): Promise<LocalPresetListResult> =>
-      ipcRenderer.invoke('enterprise:local-presets'),
-    uploadAgent: (presetId: string): Promise<AgentUploadResult> =>
-      ipcRenderer.invoke('enterprise:agent-upload', presetId),
-    openAgents: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:open-agents'),
-    closeAgents: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:close-agents')
+    quit: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:quit')
   })
 )
 

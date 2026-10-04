@@ -1,4 +1,5 @@
-/** agent_platform 智能体在进程间传递的序列化契约；不依赖 Electron。 */
+/** agent_platform 智能体跨进程传递的序列化契约；不依赖 Electron。
+ *  Ported from src/shared/enterprise-agents.ts. */
 
 export interface PlatformAgentSummary {
   /** 平台智能体 UUID */
@@ -69,3 +70,10 @@ export type LocalPresetListResult =
 export type AgentUploadResult =
   | { ok: true; agentId: string; version: number | null }
   | { ok: false; code: EnterpriseAgentFailureCode; message: string }
+
+/** 平台会话的最小调用面；壳 EnterpriseAuth 与插件 FileAuth 都满足它。 */
+export interface PlatformAuth {
+  apiGet(path: string): Promise<{ status: 'ok'; data: unknown } | { status: 'unauthorized' } | { status: 'unreachable' } | { status: 'error'; code: number; message: string }>
+  apiPost(path: string, body: unknown): Promise<{ status: 'ok'; data: unknown } | { status: 'unauthorized' } | { status: 'unreachable' } | { status: 'error'; code: number; message: string }>
+  getServerUrl(): string
+}

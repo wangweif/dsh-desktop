@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractPersonaPrompt } from '../src/shared/persona-extract'
+import { extractPersonaPrompt } from '../packages/dsh-enterprise-agents/lib/persona-extract.js'
 
 const composition = (personaBlock: string, extra = '') => `# 创造模式产物
 - id: persona

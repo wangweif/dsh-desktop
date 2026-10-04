@@ -3,11 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
-import {
-  buildComposition,
-  buildMetadata,
-  EnterpriseAgentStore
-} from '../src/main/enterprise/agents'
+import { buildComposition, buildMetadata } from '../packages/dsh-enterprise-agents/lib/composition.js'
+import { EnterpriseAgentStore } from '../packages/dsh-enterprise-agents/lib/store.js'
 import { EnterpriseAuth, type EnterpriseCredentialCodec } from '../src/main/enterprise/auth'
 
 const AGENT_UUID = '550e8400-e29b-41d4-a716-446655440000'

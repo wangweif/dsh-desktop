@@ -33,6 +33,18 @@ export interface EnterpriseAuthOptions {
   fetchImpl?: typeof fetch
   codec?: EnterpriseCredentialCodec
   log?: (line: string) => void
+  /**
+   * 每次 #persist 成功后的会话快照（login 成功/登出/换服务器/恢复失效）。
+   * 壳用它把明文会话写入 DSH_HOME 交接文件，供 harness 插件（dsh-enterprise-agents）
+   * 调平台接口。fire-and-forget：openHarness 在门禁之后启动，写入余量充足。
+   */
+  onChange?: (snapshot: EnterpriseAuthSnapshot) => void
+}
+
+/** 交接给 harness 插件的会话快照；sessionCookie 缺失表示未登录。 */
+export interface EnterpriseAuthSnapshot {
+  serverUrl: string
+  sessionCookie?: string
 }
 
 type SessionCheck =
@@ -108,6 +120,7 @@ export class EnterpriseAuth {
   readonly #fetchImpl: typeof fetch
   readonly #codec: EnterpriseCredentialCodec | undefined
   readonly #log: (line: string) => void
+  readonly #onChange: ((snapshot: EnterpriseAuthSnapshot) => void) | undefined
   #serverUrl = DEFAULT_ENTERPRISE_SERVER_URL
   #sessionCookie: string | undefined
   #user: EnterpriseUser | undefined
@@ -117,6 +130,7 @@ export class EnterpriseAuth {
     this.#fetchImpl = options.fetchImpl ?? fetch
     this.#codec = options.codec
     this.#log = options.log ?? (() => undefined)
+    this.#onChange = options.onChange
   }
 
   getServerUrl(): string {
@@ -335,6 +349,7 @@ export class EnterpriseAuth {
     }
     if (this.#user) store.user = this.#user
     await atomicWriteJson(this.#storePath, store)
+    this.#onChange?.({ serverUrl: this.#serverUrl, sessionCookie: this.#sessionCookie })
   }
 
   async #loadStore(): Promise<EnterpriseStore> {
