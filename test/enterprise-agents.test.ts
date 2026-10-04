@@ -5,7 +5,7 @@ import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
 import { buildComposition, buildMetadata } from '../packages/dsh-enterprise-agents/lib/composition.js'
 import { EnterpriseAgentStore } from '../packages/dsh-enterprise-agents/lib/store.js'
-import { EnterpriseAuth, type EnterpriseCredentialCodec } from '../src/main/enterprise/auth'
+import { DEFAULT_ENTERPRISE_SERVER_URL, EnterpriseAuth, type EnterpriseCredentialCodec } from '../src/main/enterprise/auth'
 
 const AGENT_UUID = '550e8400-e29b-41d4-a716-446655440000'
 const OTHER_UUID = 'aaaaaaaa-0000-0000-0000-000000000000'
@@ -137,7 +137,7 @@ describe('EnterpriseAgentStore', () => {
       agentId: AGENT_UUID,
       name: '育种数据分析师',
       version: 3,
-      serverUrl: 'http://localhost:3002'
+      serverUrl: DEFAULT_ENTERPRISE_SERVER_URL
     })
     // 安装后无临时/备份残留
     expect((await readdir(root)).sort()).toEqual([`nkyz-${AGENT_UUID}`])

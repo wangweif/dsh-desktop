@@ -6,7 +6,7 @@ import type {
   EnterpriseUser
 } from '../../shared/enterprise'
 
-export const DEFAULT_ENTERPRISE_SERVER_URL = 'http://localhost:3002'
+export const DEFAULT_ENTERPRISE_SERVER_URL = 'https://ai.touchit.com.cn/agent'
 
 const REQUEST_TIMEOUT_MS = 10_000
 const SESSION_COOKIE_NAME = 'session'
