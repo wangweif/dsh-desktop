@@ -71,6 +71,13 @@ window.__ModuleLoader__.load({
 .dtpl-cell.head { background: var(--dsw-alias-label-caption); opacity: 0.5; }
 .dtpl-cell.total { background: var(--dsw-alias-state-business-primary); opacity: 0.55; }
 @media (prefers-reduced-motion: reduce) { .dtpl-card, .dtpl-chip { transition: none; } }
+/* 模式面板双向互斥（跨插件无状态 API，以 DOM 信号协调）：
+1) 我方面板打开且 PPT 未激活 → 同 dock 的 PPT 条目让位（其浮层是绝对定位，会同屏覆盖）；
+2) PPT 激活（chip aria-pressed）→ 我方面板让位。两个条件互斥，无死锁。 */
+body:has([data-slot] > .dtpl-panel):not(:has([data-desktop-ppt][aria-pressed='true'])) [data-slot='conversation.hero.dock'] > *:not(.dtpl-panel),
+body:has([data-slot] > .dtpl-panel):not(:has([data-desktop-ppt][aria-pressed='true'])) [data-slot='conversation.composer.dock'] > *:not(.dtpl-panel) { display: none; }
+body:has([data-desktop-ppt][aria-pressed='true']) [data-slot='conversation.hero.dock'] > .dtpl-panel,
+body:has([data-desktop-ppt][aria-pressed='true']) [data-slot='conversation.composer.dock'] > .dtpl-panel { display: none; }
 `
 
     /** 客户端会话态：Map<modeKey, state>；unbound key 暂存无会话选择。 */
@@ -253,7 +260,11 @@ window.__ModuleLoader__.load({
         type: 'button',
         className: 'dtpl-chip',
         'data-selected': open || state.selectedId !== null ? '1' : '0',
-        onClick: () => store.update(modeKey, { panelKind: open ? null : kind })
+        onClick: () => {
+          // PPT 模式激活时先替用户退出（点 Word/Excel 即切换创作模式的明确意图）
+          document.querySelector('[data-desktop-ppt][aria-pressed="true"]')?.click()
+          store.update(modeKey, { panelKind: open ? null : kind })
+        }
       },
       h('span', { className: `dtpl-chip-mark ${kind}`, 'aria-hidden': 'true' }),
       t(kind === 'word' ? 'modeWord' : 'modeExcel'))
