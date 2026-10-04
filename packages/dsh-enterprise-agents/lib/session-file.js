@@ -1,4 +1,4 @@
-import { watch } from 'node:fs'
+import { mkdirSync, watch } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
@@ -131,6 +131,8 @@ export function watchSessionHandoff(handler, options = {}) {
     }, 100)
   }
   try {
+    // 目录可能尚未创建（登录前）：先建再 watch（壳侧写入方也会 mkdir）
+    mkdirSync(dirname(path), { recursive: true })
     watcher = watch(dirname(path), { persistent: false }, (_event, filename) => {
       if (filename === HANDOFF_FILE) fire()
     })

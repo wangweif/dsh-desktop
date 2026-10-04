@@ -1,0 +1,27 @@
+{
+  "name": "dsh-doc-templates",
+  "version": "0.1.0",
+  "description": "Word/Excel template composer for DSH Desktop: pick a built-in template in the conversation, the agent fills it into a finished document.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.js" },
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}

@@ -84,3 +84,12 @@
 - insert:
     - id: dsh-enterprise-agents
       name: dsh-enterprise-agents
+
+# Word/Excel template composer: pick a built-in template in the conversation
+# and let the agent fill it. Session state lives under the dshHome root; the
+# bundled skill's template files are materialized there for agent Python.
+- insert:
+    - id: dsh-doc-templates
+      name: dsh-doc-templates
+      config:
+        root: !!js dshHomePath('doc-templates')

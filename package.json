@@ -44,7 +44,8 @@
     "ppt:build": "node scripts/prepare-ppt-runtime.mjs",
     "pretest": "npm run office:prepare && npm run ppt:build",
     "pretest:watch": "npm run office:prepare && npm run ppt:build",
-    "office:prepare": "node scripts/office-runtime/prepare.mjs"
+    "office:prepare": "node scripts/office-runtime/prepare.mjs",
+    "doc-templates:build": "node scripts/run-doc-templates-build.mjs"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",
@@ -282,6 +283,7 @@
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-office": "file:packages/dsh-desktop-office",
     "dsh-enterprise-agents": "file:packages/dsh-enterprise-agents",
+    "dsh-doc-templates": "file:packages/dsh-doc-templates",
     "dsh-desktop-onboarding": "file:packages/dsh-desktop-onboarding",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
     "dsh-desktop-workbenches": "file:packages/dsh-desktop-workbenches",
