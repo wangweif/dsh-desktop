@@ -3,10 +3,29 @@ import {
   archiveFeedUrl,
   compareVersions,
   fetchAvailableReleases,
+  isVersion,
   parseVersionIndex,
   stableFeedUrl,
   versionIndexUrl
 } from '../src/main/update/version-catalog'
+
+describe('isVersion', () => {
+  it('accepts canonical semver, prereleases and build metadata', () => {
+    expect(isVersion('0.8.0')).toBe(true)
+    expect(isVersion('0.9.0-rc.1')).toBe(true)
+    expect(isVersion('0.9.0+build-info')).toBe(true)
+    expect(isVersion('0.9.0-rc.1+build')).toBe(true)
+  })
+
+  it('rejects traversal, leading-zero prerelease identifiers, overlong and non-string input', () => {
+    expect(isVersion('../../evil')).toBe(false)
+    expect(isVersion('0.9.0-01')).toBe(false)
+    expect(isVersion('1.2')).toBe(false)
+    expect(isVersion('v1.2.3')).toBe(false)
+    expect(isVersion('0.8.0'.repeat(20))).toBe(false)
+    expect(isVersion(42)).toBe(false)
+  })
+})
 
 describe('version-catalog feed urls', () => {
   it('derives the stable feed and index from the enterprise server base', () => {

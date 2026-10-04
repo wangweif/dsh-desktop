@@ -1,4 +1,3 @@
-import { isVersion } from '../desktop-service/service'
 import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron'
 import electronUpdater from 'electron-updater'
 import type { UpdateStatus } from '../../shared/contracts'
@@ -26,6 +25,7 @@ import {
   archiveFeedUrl,
   compareVersions,
   fetchAvailableReleases,
+  isVersion,
   stableFeedUrl
 } from './version-catalog'
 

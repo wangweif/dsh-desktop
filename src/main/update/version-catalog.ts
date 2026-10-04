@@ -4,6 +4,15 @@ export type { AvailableRelease }
 
 const INDEX_TIMEOUT_MS = 8_000
 
+const SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([\da-zA-Z-]+(?:\.[\da-zA-Z-]+)*))?(?:\+[\da-zA-Z-]+(?:\.[\da-zA-Z-]+)*)?$/
+
+/** Canonical SemVer check (with build metadata); rejects non-strings, overlong and malformed values. */
+export function isVersion(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 80 || !SEMVER.test(value)) return false
+  return !(SEMVER.exec(value)?.[4]?.split('.').some(part => /^0\d+$/.test(part)))
+}
+
 /**
  * 更新源跟随企业服务器地址：{serverUrl}/api/desktop/updates（agent_platform
  * 桌面端发版中心）。改企业服务器后，下次检查自动使用新地址。

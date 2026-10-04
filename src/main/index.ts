@@ -1,4 +1,3 @@
-import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
 import { applyMacosWindowBackdrop } from './macos-window-backdrop'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
 import { RepairAgentService, type CrashEvidence } from './repair-agent'
@@ -94,7 +93,7 @@ import { SafeModeFrame } from './safe-mode-frame'
 import { desktopResourceUrl, installDesktopProtocol, registerDesktopScheme, SAFE_MODE_PAGE } from './desktop-protocol'
 import { ensureLaunchRoot } from './state/launch-root'
 import { electronNodeExecutable } from './runtime/electron-node-executable'
-import { initializeDesktopInstall } from './state/desktop-startup-install'
+import { classifyDesktopInstall } from './state/desktop-install-state'
 import { forgetRemovedWorkbenchMarketInstall } from './state/workbench-market-recovery'
 import {
   listInstalledProfilePlugins,
@@ -843,7 +842,6 @@ function respondToGpuFallbackSignal(
   if (!plan.relaunch) return false
   gpuFallbackRelaunching = true
   app.relaunch()
-  desktopDiagnostics?.markCleanExit()
   app.exit(0)
   return true
 }
@@ -1024,7 +1022,6 @@ function createWindow(): BrowserWindow {
     window.hide()
   })
   window.on('session-end', () => {
-    desktopDiagnostics?.markCleanExit()
     desktopStorageManager?.flushSync()
   })
   window.on('page-title-updated', (event) => {
@@ -2122,8 +2119,6 @@ async function showPluginRecovery(options?: {
           plugins: detection.plugins
         }
       }
-      // A failure attributed to a user-installed plugin is handed to the user, not reported.
-      if (detection.plugins.length > 0) desktopDiagnostics?.discardPendingPluginFailure()
       waitForRendererEvidence = false
       if (applyPendingFrontendEvidence()) continue
 
@@ -3305,7 +3300,6 @@ async function showMobilePairing(): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
-  desktopDiagnostics?.startSending()
   installDesktopProtocol(desktopResourcePath)
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
@@ -3355,7 +3349,6 @@ async function bootstrap(): Promise<void> {
         })
         : spawn(executablePath, args, options),
     onChanged: (snapshot) => {
-      desktopDiagnostics?.runtimeChanged(snapshot, () => runtime.flushLog(), runtime.launchAttemptId)
       if (!safeModeVisible && snapshot.phase === 'ready') lastCrashEvidence = undefined
       if (!safeModeVisible && snapshot.phase === 'failed') {
         lastCrashEvidence = {
@@ -3482,7 +3475,6 @@ async function bootstrap(): Promise<void> {
   ipcMain.removeHandler('harness:open-recovery')
   ipcMain.handle('harness:open-recovery', async (event, frontendErrorMessage?: unknown) => {
     assertTrustedMainWindowEvent(event)
-    desktopDiagnostics?.discardPendingPluginFailure()
     const message = typeof frontendErrorMessage === 'string' ? frontendErrorMessage : undefined
     if (message) appendRendererPluginFailureLog(message)
     const logs = [...rendererPluginFailureLogs]
@@ -3674,9 +3666,6 @@ async function bootstrap(): Promise<void> {
         const dshHome = join(app.getPath('userData'), 'harness')
         await quarantineInstalledLaunchAgentsForUpdate(dshHome)
         quitting = true
-        // NSIS may force-kill before will-quit; clear the marker so the next
-        // launch does not treat this intentional update as an unclean-exit.
-        desktopDiagnostics?.markCleanExit()
         stopUpdateManager()
       },
       // 升级源跟随企业服务器地址；restore 完成前先兜底生产默认地址
@@ -3705,13 +3694,13 @@ if (isDaemonLaunch(process.env, process.platform)) {
     // and the splash instead of blocking the main process right before the
     // Harness spawn. Only the instance that will actually launch pays for it.
     void prewarmShellEnvironment()
-    // Classify before DesktopService creates installation.json and bootstrap
-    // creates launch-root; either path would otherwise look like legacy data.
-    initializeDesktopInstall({
+    // Classify before bootstrap creates launch-root; it would otherwise look
+    // like legacy data from an upstream install.
+    classifyDesktopInstall({
       userDataPath: app.getPath('userData'),
       appVersion: app.getVersion(),
       developmentBuild
-    }, initializeDesktopService)
+    })
     app.on('second-instance', (_event, argv) => {
       if (!isUserInitiatedInstance(argv)) return
       if (shouldStartInSafeMode(argv)) {
@@ -3725,7 +3714,6 @@ if (isDaemonLaunch(process.env, process.platform)) {
     })
     registerDesktopScheme()
     app.whenReady().then(bootstrap).catch((error: unknown) => {
-      desktopDiagnostics?.startupFailed(error)
       showUnexpectedError(error)
       app.quit()
     })
@@ -3746,7 +3734,6 @@ if (isDaemonLaunch(process.env, process.platform)) {
       if (process.platform !== 'darwin') app.quit()
     })
     app.on('before-quit', (event) => {
-      desktopDiagnostics?.markCleanExit()
       if (quitting || !runtime) return
       event.preventDefault()
       quitting = true
