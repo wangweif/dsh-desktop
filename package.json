@@ -45,7 +45,7 @@
     "pretest": "npm run office:prepare && npm run ppt:build",
     "pretest:watch": "npm run office:prepare && npm run ppt:build",
     "office:prepare": "node scripts/office-runtime/prepare.mjs",
-    "doc-templates:build": "node scripts/run-doc-templates-build.mjs"
+    "doc-templates:build": "node scripts/run-doc-templates-build.mjs && node scripts/generate-doc-template-previews.mjs"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",

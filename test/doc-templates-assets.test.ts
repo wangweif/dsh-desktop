@@ -66,4 +66,13 @@ describe('doc-templates built-in assets', () => {
       expect(xml.match(new RegExp(`\\{\\{${key}\\}\\}`, 'g'))).toHaveLength(1)
     }
   })
+
+  it('ships a rendered PNG preview per template', async () => {
+    const { stat } = await import('node:fs/promises')
+    for (const id of ['work-weekly-report', 'work-monthly-report', 'timesheet-monthly']) {
+      const info = await stat(join(TEMPLATES_DIR, '..', 'previews', `${id}.png`))
+      expect(info.size).toBeGreaterThan(1000)
+      expect(info.isFile()).toBe(true)
+    }
+  })
 })

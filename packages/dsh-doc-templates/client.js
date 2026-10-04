@@ -45,31 +45,23 @@ window.__ModuleLoader__.load({
 .dtpl-panel-head { display: flex; align-items: center; justify-content: space-between; }
 .dtpl-panel-title { font-size: 13px; font-weight: 650; color: var(--dsw-alias-label-primary); }
 .dtpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
-.dtpl-card { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 12px; background: var(--dsw-alias-bg-module-platform); cursor: pointer; text-align: left; }
+.dtpl-card { display: flex; flex-direction: column; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-base); cursor: pointer; text-align: left; padding: 0; overflow: hidden; }
 .dtpl-card:hover { border-color: var(--dsw-alias-label-caption); }
-.dtpl-card[data-selected="1"] { border-color: var(--dsw-alias-state-business-primary); box-shadow: 0 0 0 1px var(--dsw-alias-state-business-primary); }
+.dtpl-card[data-selected="1"] { border-color: var(--dsw-alias-state-business-primary); box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary); }
 .dtpl-card:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
-.dtpl-card-name { font-size: 13px; font-weight: 650; color: var(--dsw-alias-label-primary); }
-.dtpl-card-desc { font-size: 11px; line-height: 1.5; color: var(--dsw-alias-label-secondary); }
+.dtpl-card-img { width: 100%; display: block; background: var(--dsw-alias-bg-skeleton); object-fit: cover; }
+.dtpl-card-img.word { aspect-ratio: 3 / 4; }
+.dtpl-card-img.excel { aspect-ratio: 21 / 10; }
+.dtpl-card-label { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 7px 10px; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); border-top: 1px solid var(--dsw-alias-border-l1); }
 .dtpl-card-mark { font-size: 10px; color: var(--dsw-alias-state-business-primary); font-weight: 600; }
 .dtpl-empty, .dtpl-error { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 90px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
 .dtpl-error { color: var(--dsw-alias-state-error-primary); }
 .dtpl-retry { padding: 3px 10px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l2); background: none; color: var(--dsw-alias-label-primary); font-size: 12px; cursor: pointer; }
 .dtpl-accessory { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 10px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-module-platform); font-size: 11px; color: var(--dsw-alias-label-secondary); transform: rotate(-3deg); }
+.dtpl-accessory-img { width: 26px; height: 26px; border-radius: 4px; object-fit: cover; border: 1px solid var(--dsw-alias-border-l2); }
 .dtpl-accessory-x { border: none; background: none; color: var(--dsw-alias-label-caption); cursor: pointer; font-size: 13px; padding: 0 2px; }
 .dtpl-badge { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font-size: 11px; }
 /* CSS 语义占位预览（V1 无位图） */
-.dtpl-preview { position: relative; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-base); overflow: hidden; }
-.dtpl-preview.word { aspect-ratio: 3 / 4; padding: 10%; display: flex; flex-direction: column; gap: 6%; }
-.dtpl-preview.excel { aspect-ratio: 4 / 3; padding: 8%; display: flex; flex-direction: column; }
-.dtpl-bar { height: 5px; border-radius: 2px; background: var(--dsw-alias-border-l2); }
-.dtpl-bar.w1 { width: 62%; height: 9px; background: var(--dsw-alias-label-caption); }
-.dtpl-bar.w2 { width: 96%; } .dtpl-bar.w3 { width: 88%; } .dtpl-bar.w4 { width: 92%; }
-.dtpl-accent { width: 26%; height: 6px; border-radius: 3px; background: var(--dsw-alias-state-business-primary); }
-.dtpl-cells { flex: 1; display: grid; grid-template-columns: repeat(6, 1fr); grid-auto-rows: 1fr; gap: 3px; }
-.dtpl-cell { border-radius: 2px; background: var(--dsw-alias-border-l1); }
-.dtpl-cell.head { background: var(--dsw-alias-label-caption); opacity: 0.5; }
-.dtpl-cell.total { background: var(--dsw-alias-state-business-primary); opacity: 0.55; }
 @media (prefers-reduced-motion: reduce) { .dtpl-card, .dtpl-chip { transition: none; } }
 /* 模式面板双向互斥（跨插件无状态 API，以 DOM 信号协调）：
 1) 我方面板打开且 PPT 未激活 → 同 dock 的 PPT 条目让位（其浮层是绝对定位，会同屏覆盖）；
@@ -167,44 +159,30 @@ body:has([data-desktop-ppt][aria-pressed='true']) [data-slot='conversation.compo
       }
     }
 
-    function CssPreview({ variant }) {
-      if (variant === 'excel-sheet') {
-        return h('div', { className: 'dtpl-preview excel', 'aria-hidden': 'true' },
-          h('div', { className: 'dtpl-cells' },
-            Array.from({ length: 12 }, (_, i) => h('span', {
-              key: i,
-              className: `dtpl-cell${i < 6 ? ' head' : i >= 9 ? ' total' : ''}`
-            }))))
-      }
-      return h('div', { className: 'dtpl-preview word', 'aria-hidden': 'true' },
-        h('div', { className: 'dtpl-bar w1' }),
-        h('div', { className: 'dtpl-accent' }),
-        variant === 'word-monthly'
-          ? h(React.Fragment, null,
-              h('div', { className: 'dtpl-bar w2' }), h('div', { className: 'dtpl-bar w3' }),
-              h('div', { className: 'dtpl-bar w2' }), h('div', { className: 'dtpl-bar w4' }),
-              h('div', { className: 'dtpl-bar w3' }))
-          : h(React.Fragment, null,
-              h('div', { className: 'dtpl-bar w2' }), h('div', { className: 'dtpl-bar w3' }),
-              h('div', { className: 'dtpl-bar w2' }), h('div', { className: 'dtpl-bar w4' })))
-    }
-
     /** catalog 下发 {zh,en} 双语对象；按页面语言取文本（React child 必须是字符串）。 */
     const isZh = () => (document.documentElement.lang || 'zh').toLowerCase().startsWith('zh')
     const locText = (pair) => (pair && typeof pair === 'object' ? (isZh() ? pair.zh : pair.en) : pair) ?? ''
 
+    /** 模板卡：真实预览图（host 渲染入库）+ 名称条，观感对齐 PPT 模板卡。 */
     function TemplateCard({ template, selected, t, choose }) {
       return h('button', {
         type: 'button',
         className: 'dtpl-card',
         'data-selected': selected ? '1' : '0',
         'aria-pressed': selected,
+        title: locText(template.description),
         onClick: () => choose(template.id)
       },
-      h(CssPreview, { variant: template.variant }),
-      h('span', { className: 'dtpl-card-name' }, locText(template.name)),
-      h('span', { className: 'dtpl-card-desc' }, locText(template.description)),
-      selected ? h('span', { className: 'dtpl-card-mark' }, `✓ ${t('selected')}`) : null)
+      h('img', {
+        className: `dtpl-card-img ${template.kind}`,
+        src: `/dsh-doc-templates/previews/${template.id}.png`,
+        alt: '',
+        loading: 'lazy',
+        draggable: false
+      }),
+      h('span', { className: 'dtpl-card-label' },
+        locText(template.name),
+        selected ? h('span', { className: 'dtpl-card-mark' }, `✓ ${t('selected')}`) : null))
     }
 
     function TemplatePanel({ client, modeKey, t, kind }) {
@@ -278,7 +256,7 @@ body:has([data-desktop-ppt][aria-pressed='true']) [data-slot='conversation.compo
       const template = state.templates.find((item) => item.id === state.selectedId)
       if (template === undefined) return null
       return h('span', { className: 'dtpl-accessory' },
-        h(CssPreview, { variant: template.variant }),
+        h('img', { className: 'dtpl-accessory-img', src: `/dsh-doc-templates/previews/${template.id}.png`, alt: '' }),
         h('span', null, locText(template.name)),
         h('button', {
           type: 'button',

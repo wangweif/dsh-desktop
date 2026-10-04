@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { TEMPLATES } from './lib/catalog.js'
 import { fileURLToPath } from 'node:url'
 import { BUNDLED_SKILL_RANK, renderSkillContent } from '@deepseek-ai/dsh-skill'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -109,6 +110,43 @@ export async function apply(ctx, config = {}) {
             rpcId: body?.rpcId,
             result: { ok: false, error: { code: 'internal', message: error instanceof Error ? error.message : String(error) } }
           }))
+        }
+      }
+    }))
+
+    // 模板预览图（LibreOffice 渲染入库，随物化目录下发）：白名单 id + png
+    webCtx.effect(() => webCtx.webServer.register({
+      kind: 'prefix',
+      path: `${RPC_CHANNEL}/previews`,
+      handler: async (req, res) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          res.setHeader('Allow', 'GET, HEAD')
+          res.writeHead(405)
+          res.end()
+          return
+        }
+        const connection = webCtx.get('connection')
+        const rejection = connection?.requestRejection?.(req)
+        if (rejection !== undefined) {
+          res.writeHead(rejection)
+          res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+          return
+        }
+        const name = new URL(req.url ?? '/', 'http://localhost').pathname.replace(/^.*\//u, '')
+        const match = /^([a-z0-9-]+)\.png$/u.exec(name)
+        const template = match ? TEMPLATES.find((item) => item.id === match[1]) : undefined
+        if (template === undefined) {
+          res.writeHead(404)
+          res.end('not found')
+          return
+        }
+        try {
+          const bytes = await readFile(joinPath(assetsRoot, 'previews', `${template.id}.png`))
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' })
+          res.end(req.method === 'HEAD' ? undefined : bytes)
+        } catch {
+          res.writeHead(404)
+          res.end('preview missing')
         }
       }
     }))
