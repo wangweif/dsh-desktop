@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron'
+import { app, BrowserWindow, ipcMain, powerMonitor, shell } from 'electron'
 import electronUpdater from 'electron-updater'
 import type { UpdateStatus } from '../../shared/contracts'
 import { DEFAULT_ENTERPRISE_SERVER_URL } from '../enterprise/auth'
@@ -34,8 +34,14 @@ const TRANSIENT_STATUS_MS = 8_000
 
 let status = initialUpdateStatus(app.getVersion())
 let prepareToInstall: (() => Promise<void>) | undefined
-// IPC 在 startUpdateManager 之前注册；兜底默认服务器，避免启动初期悬空。
+// 兜底默认服务器；configureUpdateBase 在 IPC 注册处注入企业服务器地址 getter。
+// dev 渠道包不走 startUpdateManager（无自动检查），手动检查仍需正确的 base。
 let getUpdateBase: () => string = () => DEFAULT_ENTERPRISE_SERVER_URL
+
+/** 注入升级源地址 getter：{serverUrl}/api/desktop/updates（发版中心）。 */
+export function configureUpdateBase(getter: () => string): void {
+  getUpdateBase = getter
+}
 let startupTimer: NodeJS.Timeout | undefined
 let intervalTimer: NodeJS.Timeout | undefined
 let resetTimer: NodeJS.Timeout | undefined
@@ -98,12 +104,8 @@ export function skipUpdate(version: unknown): UpdateStatus {
   return getUpdateStatus()
 }
 
-export function startUpdateManager(options: {
-  prepareToInstall: () => Promise<void>
-  getUpdateBase: () => string
-}): void {
+export function startUpdateManager(options: { prepareToInstall: () => Promise<void> }): void {
   prepareToInstall = options.prepareToInstall
-  getUpdateBase = options.getUpdateBase
   if (started) return
   started = true
 
@@ -172,6 +174,18 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
  */
 export async function downloadAvailableUpdate(): Promise<UpdateStatus> {
   if (status.phase !== 'available' || downloading) return getUpdateStatus()
+  // 未签名 mac 应用无法走 Squirrel 在线安装（ShipIt 安装前校验宿主与更新包
+  // 代码签名，宿主未签名直接报 "Could not get code signature for running
+  // application"）。改为打开浏览器下载安装包，手动覆盖安装；Windows 的
+  // NSIS 更新不校验签名，保留在线下载安装。恢复 mac 签名后回到在线升级。
+  if (process.platform === 'darwin') {
+    const version = status.availableVersion
+    if (version) {
+      await shell.openExternal(`${archiveFeedUrl(getUpdateBase(), version)}download`)
+      transition({ type: 'reset' })
+    }
+    return getUpdateStatus()
+  }
   downloading = true
 
   try {

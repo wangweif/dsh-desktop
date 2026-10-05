@@ -34,7 +34,7 @@ function createFetchStub(
 const loginResponse = () =>
   new Response(
     JSON.stringify({ code: 0, success: true, data: { id: 'u1', username: 'admin', role: 'super_admin' } }),
-    { headers: { 'set-cookie': 'session=signed-token; path=/' } }
+    { headers: { 'set-cookie': 'agent_platform_session=signed-token; path=/' } }
   )
 
 const envelope = (data: unknown) =>

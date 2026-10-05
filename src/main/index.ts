@@ -151,6 +151,7 @@ import {
 } from './window-raise'
 import {
   checkForUpdates,
+  configureUpdateBase,
   registerUpdateHandlers,
   startUpdateManager,
   stopUpdateManager
@@ -3304,6 +3305,9 @@ async function bootstrap(): Promise<void> {
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers()
+  // 升级源跟随企业服务器地址；restore 完成前先兜底生产默认地址。dev 渠道包
+  // 不走 startUpdateManager，手动检查也依赖这里注入的 getter。
+  configureUpdateBase(() => enterpriseAuth?.getServerUrl() ?? DEFAULT_ENTERPRISE_SERVER_URL)
   nativeTheme.themeSource = harnessThemePreference()
   ensureTray()
   const dshHome = join(app.getPath('userData'), 'harness')
@@ -3667,9 +3671,7 @@ async function bootstrap(): Promise<void> {
         await quarantineInstalledLaunchAgentsForUpdate(dshHome)
         quitting = true
         stopUpdateManager()
-      },
-      // 升级源跟随企业服务器地址；restore 完成前先兜底生产默认地址
-      getUpdateBase: () => enterpriseAuth?.getServerUrl() ?? DEFAULT_ENTERPRISE_SERVER_URL
+      }
     })
   }
 }

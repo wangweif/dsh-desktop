@@ -28,7 +28,7 @@ function createFetchStub(handler: (call: FetchCall) => Response | Promise<Respon
 const successLogin = () =>
   new Response(
     JSON.stringify({ code: 0, success: true, data: { id: 'u1', username: 'admin', role: 'super_admin' } }),
-    { headers: { 'set-cookie': 'session=signed-token; path=/; Max-Age=1209600; httponly; samesite=lax' } }
+    { headers: { 'set-cookie': 'agent_platform_session=signed-token; path=/; Max-Age=1209600; httponly; samesite=lax' } }
   )
 
 const meBody = {
@@ -118,7 +118,7 @@ describe('EnterpriseAuth', () => {
     expect(raw).toContain('"sessionCookieEncrypted"')
     // 后续 /auth/me 请求带 cookie 头
     const meCall = calls.find((call) => call.url.endsWith('/api/auth/me'))
-    expect(meCall?.init?.headers).toMatchObject({ cookie: 'session=signed-token' })
+    expect(meCall?.init?.headers).toMatchObject({ cookie: 'agent_platform_session=signed-token' })
   })
 
   it('maps platform error envelopes to failure codes', async () => {
@@ -253,7 +253,7 @@ describe('EnterpriseAuth', () => {
     expect(ok).toEqual({ status: 'ok', data: agentsData })
     // 请求带会话 cookie；结果里不携带 cookie
     const agentsCall = calls.find((call) => call.url.endsWith('/api/agents'))
-    expect(agentsCall?.init?.headers).toMatchObject({ cookie: 'session=signed-token' })
+    expect(agentsCall?.init?.headers).toMatchObject({ cookie: 'agent_platform_session=signed-token' })
     expect(JSON.stringify(ok)).not.toContain('signed-token')
   })
 
@@ -309,7 +309,7 @@ describe('EnterpriseAuth.apiPost', () => {
     expect(result).toEqual({ status: 'ok', data: { id: 'x', version: 2 } })
     const post = stub.calls.find((call) => call.url.endsWith('/api/agents/upload'))
     expect(post?.init?.method).toBe('POST')
-    expect(post?.init?.headers).toMatchObject({ cookie: 'session=signed-token', 'content-type': 'application/json' })
+    expect(post?.init?.headers).toMatchObject({ cookie: 'agent_platform_session=signed-token', 'content-type': 'application/json' })
     expect(post?.init?.body).toBe(JSON.stringify({ name: 'a' }))
   })
 
@@ -367,7 +367,7 @@ describe('EnterpriseAuth.apiPost', () => {
     await auth.login('admin', 'admin')
     expect(snapshots.at(-1)).toMatchObject({
       serverUrl: DEFAULT_ENTERPRISE_SERVER_URL,
-      sessionCookie: 'session=signed-token'
+      sessionCookie: 'agent_platform_session=signed-token'
     })
 
     await auth.logout()

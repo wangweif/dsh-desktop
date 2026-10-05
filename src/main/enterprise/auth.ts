@@ -9,7 +9,8 @@ import type {
 export const DEFAULT_ENTERPRISE_SERVER_URL = 'https://ai.touchit.com.cn/agent'
 
 const REQUEST_TIMEOUT_MS = 10_000
-const SESSION_COOKIE_NAME = 'session'
+// agent_platform 的会话 cookie 名（多应用同域部署下不用泛化的 "session" 防冲突）
+const SESSION_COOKIE_NAME = 'agent_platform_session'
 
 export interface EnterpriseCredentialCodec {
   encrypt(plain: string): string
