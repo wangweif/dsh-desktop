@@ -1,5 +1,5 @@
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import type { EnterpriseAuthSnapshot } from './auth'
 
 /**
@@ -10,7 +10,8 @@ import type { EnterpriseAuthSnapshot } from './auth'
  */
 
 export function enterpriseSessionHandoffPath(dshHome: string): string {
-  return join(dshHome, 'enterprise', 'agent-platform-session.json')
+  // 约定恒用 '/'（插件按同一约定拼接）；Windows 上 join 会出反斜杠
+  return join(dshHome, 'enterprise', 'agent-platform-session.json').split(sep).join('/')
 }
 
 export async function writeEnterpriseSessionHandoff(

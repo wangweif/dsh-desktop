@@ -148,7 +148,8 @@ describe('dsh-doc-templates host half', () => {
     const text = JSON.stringify(decision.messages[2]?.content)
     expect(text).toContain('selected_template_id: timesheet-monthly')
     expect(text).toContain('selected_template_kind: excel')
-    expect(text).toContain(harness.root)
+    // text 是 JSON.stringify 产物，Windows 反斜杠被转义，期望值需同样转义
+    expect(text).toContain(JSON.stringify(harness.root).slice(1, -1))
 
     // step 2 不再注入
     const later = await harness.preStep(fakeAgent([]), 2) as { messages: unknown[] }

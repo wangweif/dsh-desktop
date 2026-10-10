@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 
 /**
  * 资产物化（asar 对策）：Agent 的 Python 子进程读不了 app.asar 内的路径，
@@ -23,7 +23,7 @@ async function walkFiles(dir, base = dir) {
   for (const entry of entries) {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) files.push(...(await walkFiles(path, base)))
-    else files.push(path.slice(base.length + 1))
+    else files.push(path.slice(base.length + 1).split(sep).join('/'))
   }
   return files.sort()
 }
