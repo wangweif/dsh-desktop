@@ -607,8 +607,7 @@ contextBridge.exposeInMainWorld(
 contextBridge.exposeInMainWorld(
   'dshEnterprise',
   Object.freeze({
-    login: (username: string, password: string): Promise<EnterpriseLoginResult> =>
-      ipcRenderer.invoke('enterprise:login', username, password),
+    loginSso: (): Promise<EnterpriseLoginResult> => ipcRenderer.invoke('enterprise:login-sso'),
     getUser: (): Promise<{ ok: true; user: EnterpriseUser } | { ok: false }> =>
       ipcRenderer.invoke('enterprise:get-user'),
     logout: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('enterprise:logout'),

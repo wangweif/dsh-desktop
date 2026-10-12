@@ -12,6 +12,7 @@ export type EnterpriseLoginFailureCode =
   | 'invalid-credentials'
   | 'account-disabled'
   | 'unreachable'
+  | 'cancelled'
   | 'unknown'
 
 export type EnterpriseLoginResult =

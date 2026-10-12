@@ -31,11 +31,8 @@ function createFetchStub(
   return { fetch: impl as typeof fetch, calls }
 }
 
-const loginResponse = () =>
-  new Response(
-    JSON.stringify({ code: 0, success: true, data: { id: 'u1', username: 'admin', role: 'super_admin' } }),
-    { headers: { 'set-cookie': 'agent_platform_session=signed-token; path=/' } }
-  )
+/** SSO 授权窗口捕获的会话 cookie（完整 name=value 对）。 */
+const SESSION_COOKIE = 'agent_platform_session=signed-token'
 
 const envelope = (data: unknown) =>
   new Response(JSON.stringify({ code: 0, success: true, data }))
@@ -49,7 +46,6 @@ async function loggedInFixture(
   } = {}
 ): Promise<{ auth: EnterpriseAuth; stub: FetchStub }> {
   const stub = createFetchStub((url, init) => {
-    if (url.endsWith('/api/auth/login')) return loginResponse()
     if (url.endsWith('/api/auth/me')) {
       return envelope({ id: 'u1', username: 'admin', role: 'super_admin' })
     }
@@ -75,7 +71,7 @@ async function loggedInFixture(
   })
   const storePath = join(await mkdtemp(join(tmpdir(), 'dsh-agents-auth-')), 'session.json')
   const auth = new EnterpriseAuth({ storePath, fetchImpl: stub.fetch, codec: plainCodec })
-  await auth.login('admin', 'admin')
+  await auth.loginWithSessionCookie(SESSION_COOKIE)
   return { auth, stub }
 }
 
@@ -212,13 +208,12 @@ describe('EnterpriseAgentStore', () => {
 
     // apiGet 网络失败 → unreachable
     const offlineStub = createFetchStub((url) => {
-      if (url.endsWith('/api/auth/login')) return loginResponse()
       if (url.endsWith('/api/auth/me')) return envelope({ id: 'u1', username: 'admin', role: 'super_admin' })
       return Promise.reject(new TypeError('fetch failed'))
     })
     const storePath = join(await mkdtemp(join(tmpdir(), 'dsh-agents-auth-')), 'session.json')
     const offlineAuth = new EnterpriseAuth({ storePath, fetchImpl: offlineStub.fetch, codec: plainCodec })
-    await offlineAuth.login('admin', 'admin')
+    await offlineAuth.loginWithSessionCookie(SESSION_COOKIE)
     expect(await store.installAgent(offlineAuth, AGENT_UUID)).toMatchObject({
       ok: false,
       code: 'unreachable'
@@ -306,7 +301,6 @@ describe('EnterpriseAgentStore', () => {
 
     // 第一轮：全新同步，分配到两个智能体
     const first = createFetchStub((url) => {
-      if (url.endsWith('/api/auth/login')) return loginResponse()
       if (url.endsWith('/api/auth/me')) return envelope({ id: 'u1', username: 'admin', role: 'super_admin' })
       if (url.endsWith('/api/agents')) {
         return envelope([
@@ -322,7 +316,7 @@ describe('EnterpriseAgentStore', () => {
     })
     const firstPath = join(await mkdtemp(join(tmpdir(), 'dsh-agents-auth-')), 'session.json')
     const firstAuth = new EnterpriseAuth({ storePath: firstPath, fetchImpl: first.fetch, codec: plainCodec })
-    await firstAuth.login('admin', 'admin')
+    await firstAuth.loginWithSessionCookie(SESSION_COOKIE)
 
     expect(await store.syncAgents(firstAuth)).toEqual({ ok: true, installed: 2, updated: 0, skipped: 0, failed: 0 })
     expect((await store.listInstalledAgents()).length).toBe(2)
@@ -332,7 +326,6 @@ describe('EnterpriseAgentStore', () => {
 
     // 第三轮：平台发布新版本 → 更新一个
     const bumped = createFetchStub((url) => {
-      if (url.endsWith('/api/auth/login')) return loginResponse()
       if (url.endsWith('/api/auth/me')) return envelope({ id: 'u1', username: 'admin', role: 'super_admin' })
       if (url.endsWith('/api/agents')) {
         return envelope([agentExport({ version: 4 })])
@@ -342,7 +335,7 @@ describe('EnterpriseAgentStore', () => {
     })
     const bumpedPath = join(await mkdtemp(join(tmpdir(), 'dsh-agents-auth-')), 'session.json')
     const bumpedAuth = new EnterpriseAuth({ storePath: bumpedPath, fetchImpl: bumped.fetch, codec: plainCodec })
-    await bumpedAuth.login('admin', 'admin')
+    await bumpedAuth.loginWithSessionCookie(SESSION_COOKIE)
     // 先移除另一个（模拟平台取消分配：列表只剩一个）
     expect(await store.syncAgents(bumpedAuth)).toEqual({ ok: true, installed: 0, updated: 1, skipped: 0, failed: 0 })
     const versions = new Map((await store.listInstalledAgents()).map((a) => [a.agentId, a.version]))
@@ -373,13 +366,12 @@ describe('EnterpriseAgentStore', () => {
     const { auth } = await loggedInFixture()
     const store = new EnterpriseAgentStore({ presetRoot: root })
     const offlineStub = createFetchStub((url) => {
-      if (url.endsWith('/api/auth/login')) return loginResponse()
       if (url.endsWith('/api/auth/me')) return envelope({ id: 'u1', username: 'admin', role: 'super_admin' })
       return Promise.reject(new TypeError('fetch failed'))
     })
     const storePath = join(await mkdtemp(join(tmpdir(), 'dsh-agents-auth-')), 'session.json')
     const offlineAuth = new EnterpriseAuth({ storePath, fetchImpl: offlineStub.fetch, codec: plainCodec })
-    await offlineAuth.login('admin', 'admin')
+    await offlineAuth.loginWithSessionCookie(SESSION_COOKIE)
     expect(await store.syncAgents(offlineAuth)).toEqual({ ok: false, installed: 0, updated: 0, skipped: 0, failed: 0 })
     // 未登录同理
     const signedOut = new EnterpriseAuth({

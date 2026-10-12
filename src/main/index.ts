@@ -25,6 +25,7 @@ import { clearStaleLoopbackHttpCache } from './cache-maintenance'
 import { DEFAULT_ENTERPRISE_SERVER_URL, EnterpriseAuth, type EnterpriseCredentialCodec } from './enterprise/auth'
 import { writeEnterpriseSessionHandoff } from './enterprise/session-handoff'
 import { registerEnterpriseHandlers, type EnterpriseIpcEvent } from './enterprise/ipc'
+import { openEnterpriseSsoLogin } from './enterprise/sso'
 import {
   DEFAULT_HARNESS_PORT,
   extractFailureCause,
@@ -3390,6 +3391,24 @@ async function bootstrap(): Promise<void> {
   registerEnterpriseHandlers(enterpriseIpc, {
     auth: enterprise,
     isTrustedEvent: isTrustedEnterpriseEvent,
+    onSsoLogin: () => {
+      const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+      if (!parent) {
+        return Promise.resolve({
+          ok: false as const,
+          code: 'cancelled' as const,
+          message: '主窗口不可用，无法打开授权窗口'
+        })
+      }
+      return openEnterpriseSsoLogin({
+        auth: enterprise,
+        serverUrl: enterprise.getServerUrl(),
+        parent,
+        locale: harnessLocale(),
+        backgroundColor: nativeTheme.shouldUseDarkColors ? '#141416' : '#ffffff',
+        log: (line) => runtime.note(line)
+      })
+    },
     onEnter: () => {
       enterpriseEnterResolver?.()
       enterpriseEnterResolver = undefined

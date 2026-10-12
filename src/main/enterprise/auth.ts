@@ -9,8 +9,9 @@ import type {
 export const DEFAULT_ENTERPRISE_SERVER_URL = 'https://ai.touchit.com.cn/agent'
 
 const REQUEST_TIMEOUT_MS = 10_000
-// agent_platform 的会话 cookie 名（多应用同域部署下不用泛化的 "session" 防冲突）
-const SESSION_COOKIE_NAME = 'agent_platform_session'
+// agent_platform 的会话 cookie 名（多应用同域部署下不用泛化的 "session" 防冲突）；
+// SSO 授权窗口按此名从 session 提取回调写入的会话
+export const SESSION_COOKIE_NAME = 'agent_platform_session'
 
 export interface EnterpriseCredentialCodec {
   encrypt(plain: string): string
@@ -81,16 +82,6 @@ function isEnterpriseUser(value: unknown): value is EnterpriseUser {
     typeof source.username === 'string' &&
     typeof source.role === 'string'
   )
-}
-
-function extractSessionCookie(response: Response): string | undefined {
-  const lines =
-    typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : []
-  for (const line of lines) {
-    const [pair] = line.split(';')
-    if (pair?.startsWith(`${SESSION_COOKIE_NAME}=`)) return pair
-  }
-  return undefined
 }
 
 async function parseJsonBody(response: Response): Promise<Record<string, unknown> | undefined> {
@@ -261,46 +252,33 @@ export class EnterpriseAuth {
     return undefined
   }
 
-  async login(username: string, password: string): Promise<EnterpriseLoginResult> {
-    let response: Response
-    try {
-      response = await this.#fetchImpl(`${this.#serverUrl}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-      })
-    } catch (error) {
-      this.#log(`[enterprise] login request failed: ${errorMessage(error)}`)
+  /**
+   * 以 SSO 授权窗口捕获的会话 cookie 建立登录态（agent_platform /oauth/callback
+   * 写入的 agent_platform_session）。经 /api/auth/me 验证并补全用户信息；
+   * 验证失败还原原状态，不落盘。
+   */
+  async loginWithSessionCookie(cookie: string): Promise<EnterpriseLoginResult> {
+    if (!cookie) return { ok: false, code: 'unknown', message: '登录响应缺少会话凭证' }
+    const previousCookie = this.#sessionCookie
+    const previousUser = this.#user
+    this.#sessionCookie = cookie
+    const check = await this.#requestSessionUser()
+    if (check.status === 'ok') {
+      this.#user = check.user
+      await this.#persist()
+      return { ok: true, user: check.user }
+    }
+    this.#sessionCookie = previousCookie
+    this.#user = previousUser
+    if (check.status === 'unreachable') {
+      this.#log('[enterprise] sso session check unreachable')
       return {
         ok: false,
         code: 'unreachable',
         message: `无法连接平台（${this.#serverUrl}），请检查服务器地址或网络`
       }
     }
-    const payload = await parseJsonBody(response)
-    if (payload?.success === true) {
-      const cookie = extractSessionCookie(response)
-      if (!cookie) {
-        this.#log('[enterprise] login response carried no session cookie')
-        return { ok: false, code: 'unknown', message: '登录响应缺少会话凭证' }
-      }
-      this.#sessionCookie = cookie
-      this.#user = parseUser(payload.data)
-      // 补全昵称/租户等字段；失败不影响已建立的登录态
-      const enriched = await this.#requestSessionUser()
-      if (enriched.status === 'ok') this.#user = enriched.user
-      await this.#persist()
-      return { ok: true, user: this.#user }
-    }
-    const code = typeof payload?.code === 'number' ? payload.code : response.status
-    if (code === 401) return { ok: false, code: 'invalid-credentials', message: '用户名或密码错误' }
-    if (code === 403) return { ok: false, code: 'account-disabled', message: '账户已禁用' }
-    const message =
-      typeof payload?.message === 'string' && payload.message.length > 0
-        ? payload.message
-        : `登录失败（${code}）`
-    return { ok: false, code: 'unknown', message }
+    return { ok: false, code: 'unknown', message: '授权会话无效或已过期，请重新登录' }
   }
 
   async logout(): Promise<void> {

@@ -81,19 +81,7 @@
       }
       .notice.visible { display: block; }
       h1 { margin: 0 0 18px; font-size: 21px; font-weight: 650; letter-spacing: -0.025em; }
-      .field { margin: 0 0 14px; }
-      .field label { display: block; margin: 0 0 6px; font-size: 12px; font-weight: 620; color: var(--muted); }
-      .field input {
-        width: 100%;
-        min-height: 40px;
-        padding: 8px 12px;
-        border: 1px solid var(--line-strong);
-        border-radius: 10px;
-        color: var(--ink);
-        background: var(--surface);
-        font-size: 14px;
-      }
-      .field input:focus-visible { outline: 2px solid #4d6bfe; outline-offset: 1px; }
+      .intro { margin: -8px 0 18px; color: var(--muted); font-size: 13px; line-height: 1.6; }
       .button {
         min-height: 40px;
         padding: 9px 15px;
@@ -196,15 +184,8 @@
 
         <div id="view-form">
           <h1 id="heading">登录</h1>
-          <div class="field">
-            <label for="username" id="label-username">用户名</label>
-            <input id="username" type="text" autocomplete="username" spellcheck="false" />
-          </div>
-          <div class="field">
-            <label for="password" id="label-password">密码</label>
-            <input id="password" type="password" autocomplete="current-password" />
-          </div>
-          <button class="button primary" id="login" type="button">登录</button>
+          <p class="intro" id="intro">使用农科小智统一账号登录，在授权窗口完成登录后自动继续。</p>
+          <button class="button primary" id="login" type="button">农科小智统一账号登录</button>
           <div class="unreachable-actions" id="unreachable-actions">
             <button class="button" id="retry" type="button">重试</button>
             <button class="button" id="edit-server" type="button">修改服务器地址</button>
@@ -244,9 +225,9 @@
       if (locale === 'en') {
         document.getElementById('badge').textContent = 'Platform sign-in'
         document.getElementById('heading').textContent = 'Sign in'
-        document.getElementById('label-username').textContent = 'Username'
-        document.getElementById('label-password').textContent = 'Password'
-        document.getElementById('login').textContent = 'Sign in'
+        document.getElementById('intro').textContent =
+          'Sign in with your Nongke Xiaozhi unified account and continue in the authorization window.'
+        document.getElementById('login').textContent = 'Sign in with Nongke Xiaozhi'
         document.getElementById('retry').textContent = 'Retry'
         document.getElementById('edit-server').textContent = 'Change server'
         document.getElementById('quit').textContent = 'Quit'
@@ -299,40 +280,32 @@
       })
 
       const loginButton = document.getElementById('login')
-      const usernameInput = document.getElementById('username')
-      const passwordInput = document.getElementById('password')
       const unreachableActions = document.getElementById('unreachable-actions')
       const submit = async () => {
         clearNotice()
         unreachableActions.classList.remove('visible')
         loginButton.disabled = true
-        loginButton.textContent = locale === 'zh' ? '登录中…' : 'Signing in…'
+        loginButton.textContent = locale === 'zh' ? '正在打开授权窗口…' : 'Opening sign-in window…'
         try {
-          const result = await window.dshEnterprise.login(
-            usernameInput.value.trim(),
-            passwordInput.value
-          )
+          const result = await window.dshEnterprise.loginSso()
           if (result.ok) {
             showUserCard(result.user)
-          } else {
+          } else if (result.code !== 'cancelled') {
             showNotice(result.message)
             if (result.code === 'unreachable') unreachableActions.classList.add('visible')
-            passwordInput.select()
           }
         } catch (error) {
           showNotice(locale === 'zh' ? '桌面桥不可用，请重启应用' : 'Desktop bridge unavailable')
           console.error(error)
         } finally {
           loginButton.disabled = false
-          loginButton.textContent = locale === 'zh' ? '登录' : 'Sign in'
+          loginButton.textContent =
+            locale === 'zh' ? '农科小智统一账号登录' : 'Sign in with Nongke Xiaozhi'
         }
       }
       loginButton.addEventListener('click', submit)
       document.getElementById('retry').addEventListener('click', () => {
         void submit()
-      })
-      passwordInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') void submit()
       })
       document.getElementById('quit').addEventListener('click', () => {
         void window.dshEnterprise.quit()

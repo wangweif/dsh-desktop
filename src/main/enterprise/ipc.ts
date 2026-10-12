@@ -1,5 +1,5 @@
 import type { EnterpriseAuth } from './auth'
-import type { EnterpriseServerUrlResult } from '../../shared/enterprise'
+import type { EnterpriseLoginResult, EnterpriseServerUrlResult } from '../../shared/enterprise'
 
 /** ipcMain.handle 的最小结构投影，测试里用注册表替换。 */
 export interface EnterpriseIpcRegistrar {
@@ -17,6 +17,8 @@ export interface EnterpriseIpcEvent {
 export interface EnterpriseIpcDeps {
   auth: EnterpriseAuth
   isTrustedEvent: (event: EnterpriseIpcEvent) => boolean
+  /** 打开 SSO 授权窗口并等待登录结果（成功/取消/不可达）。 */
+  onSsoLogin: () => Promise<EnterpriseLoginResult>
   onEnter: () => void
   onQuit: () => void
   onSessionEnded: () => Promise<void> | void
@@ -33,17 +35,9 @@ export function registerEnterpriseHandlers(
     }
   }
 
-  ipc.handle('enterprise:login', async (event, username, password) => {
+  ipc.handle('enterprise:login-sso', async (event) => {
     guard(event)
-    if (
-      typeof username !== 'string' ||
-      typeof password !== 'string' ||
-      username.length === 0 ||
-      password.length === 0
-    ) {
-      return { ok: false as const, code: 'unknown' as const, message: '用户名和密码不能为空' }
-    }
-    return deps.auth.login(username, password)
+    return deps.onSsoLogin()
   })
 
   ipc.handle('enterprise:get-user', (event) => {

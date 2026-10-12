@@ -21,13 +21,19 @@ function createDeps(overrides: Partial<EnterpriseIpcDeps> = {}): EnterpriseIpcDe
   const calls: string[] = []
   return {
     auth: {
-      login: async () => ({ ok: true as const, user: { id: 'u1', username: 'admin', nickname: null, email: null, role: 'super_admin', tenantId: null, tenantName: null } }),
       getUser: () => undefined,
       logout: async () => calls.push('logout'),
       getServerUrl: () => 'http://localhost:3002',
       setServerUrl: async () => ({ ok: true })
     } as unknown as EnterpriseAuth,
     isTrustedEvent: (event) => event === trustedEvent,
+    onSsoLogin: async () => {
+      calls.push('sso')
+      return {
+        ok: true as const,
+        user: { id: 'u1', username: 'admin', nickname: null, email: null, role: 'super_admin', tenantId: null, tenantName: null }
+      }
+    },
     onEnter: () => calls.push('enter'),
     onQuit: () => calls.push('quit'),
     onSessionEnded: async () => {
@@ -44,7 +50,7 @@ describe('registerEnterpriseHandlers', () => {
     const registrar = createRegistrar()
     registerEnterpriseHandlers(registrar, createDeps())
     for (const channel of [
-      'enterprise:login',
+      'enterprise:login-sso',
       'enterprise:get-user',
       'enterprise:logout',
       'enterprise:get-server-url',
@@ -59,19 +65,18 @@ describe('registerEnterpriseHandlers', () => {
   it('rejects events from untrusted windows', async () => {
     const registrar = createRegistrar()
     registerEnterpriseHandlers(registrar, createDeps())
-    const login = registrar.handlers.get('enterprise:login') as Handler
-    await expect(login(untrustedEvent, 'admin', 'admin')).rejects.toThrow(/only available from the main window/)
+    const loginSso = registrar.handlers.get('enterprise:login-sso') as Handler
+    await expect(loginSso(untrustedEvent)).rejects.toThrow(/only available from the main window/)
   })
 
-  it('rejects non-string login credentials', async () => {
+  it('delegates sso login to onSsoLogin and returns its result', async () => {
     const registrar = createRegistrar()
-    registerEnterpriseHandlers(registrar, createDeps())
-    const login = registrar.handlers.get('enterprise:login') as Handler
-    await expect(login(trustedEvent, 42, 'admin')).resolves.toMatchObject({
-      ok: false,
-      message: '用户名和密码不能为空'
+    const deps = createDeps({
+      onSsoLogin: async () => ({ ok: false as const, code: 'cancelled' as const, message: '已取消登录' })
     })
-    await expect(login(trustedEvent, '', '')).resolves.toMatchObject({ ok: false })
+    registerEnterpriseHandlers(registrar, deps)
+    const loginSso = registrar.handlers.get('enterprise:login-sso') as Handler
+    await expect(loginSso(trustedEvent)).resolves.toMatchObject({ ok: false, code: 'cancelled' })
   })
 
   it('validates set-server-url input', async () => {
