@@ -20,6 +20,7 @@ const composition = [
 interface RegisteredRoute {
   path: string
   methods: readonly string[]
+  requestBody: 'buffered' | 'streaming'
   fetch(request: Request): Promise<Response>
 }
 
@@ -147,6 +148,10 @@ describe('agent preset package transfer', () => {
       ])
       expect(routes.get('/api/agent-preset.export')!.methods).toEqual(['GET', 'HEAD'])
       expect(routes.get('/api/agent-preset.import')!.methods).toEqual(['POST'])
+      // bridge 对命中路由不做 buffered 兜底：导出（GET）漏传会让 Request 带上
+      // streaming body 直接抛错；导入自行聚合并执行 16 MB 上限，保持 streaming。
+      expect(routes.get('/api/agent-preset.export')!.requestBody).toBe('buffered')
+      expect(routes.get('/api/agent-preset.import')!.requestBody).toBe('streaming')
 
       // The export route validates its own query parameter before it reaches
       // the preset roots, so a malformed id never becomes a filesystem lookup.

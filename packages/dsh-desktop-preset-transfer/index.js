@@ -297,6 +297,7 @@ export function apply(ctx) {
   connection.fetch.register({
     path: EXPORT_PATH,
     methods: ['GET', 'HEAD'],
+    requestBody: 'buffered',
     fetch: async (request) => {
       const url = new URL(request.url)
       const agentPreset = url.searchParams.get('agentPreset')
@@ -313,6 +314,8 @@ export function apply(ctx) {
   connection.fetch.register({
     path: IMPORT_PATH,
     methods: ['POST'],
+    // 导入自行聚合并执行 16 MB 上限，不走 bridge 的 JSON buffered cap。
+    requestBody: 'streaming',
     fetch: async (request) => {
       const contentType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
       if (contentType !== PRESET_ARCHIVE_MIME

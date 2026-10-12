@@ -15,6 +15,7 @@ import { writeEnterpriseSessionHandoff } from '../src/main/enterprise/session-ha
 interface RegisteredRoute {
   path: string
   methods: string[]
+  requestBody: 'buffered' | 'streaming'
   fetch: (request: Request) => Promise<Response>
 }
 
@@ -78,13 +79,19 @@ afterEach(() => {
 describe('dsh-enterprise-agents host routes', () => {
   it('registers the six loopback routes', async () => {
     const harness = await createHarness()
-    expect([...harness.routes.keys()].sort()).toEqual([
-      '/api/enterprise-agents/download',
-      '/api/enterprise-agents/installed',
-      '/api/enterprise-agents/local-presets',
-      '/api/enterprise-agents/platform',
-      '/api/enterprise-agents/uninstall',
-      '/api/enterprise-agents/upload'
+    // requestBody 必须显式声明：bridge 对命中路由不做 buffered 兜底，漏传会让
+    // GET 请求以 streaming body 构造 Request 而抛错（"服务不可用"整页错误）。
+    expect([...harness.routes.values()].map(({ path, methods, requestBody }) => ({
+      path,
+      methods: [...methods].sort(),
+      requestBody
+    })).sort((a, b) => a.path.localeCompare(b.path))).toEqual([
+      { path: '/api/enterprise-agents/download', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/enterprise-agents/installed', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/enterprise-agents/local-presets', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/enterprise-agents/platform', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/enterprise-agents/uninstall', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/enterprise-agents/upload', methods: ['POST'], requestBody: 'buffered' }
     ])
   })
 

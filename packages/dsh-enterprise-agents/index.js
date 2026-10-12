@@ -48,16 +48,19 @@ export function apply(ctx) {
   connection.fetch.register({
     path: '/api/enterprise-agents/platform',
     methods: ['GET'],
+    requestBody: 'buffered',
     fetch: async () => json(await store.listPlatformAgents(await scoped()))
   })
   connection.fetch.register({
     path: '/api/enterprise-agents/installed',
     methods: ['GET'],
+    requestBody: 'buffered',
     fetch: async () => json({ ok: true, agents: await store.listInstalledAgents() })
   })
   connection.fetch.register({
     path: '/api/enterprise-agents/download',
     methods: ['POST'],
+    requestBody: 'buffered',
     fetch: post(async (body) => {
       if (typeof body.agentId !== 'string' || body.agentId.length === 0) {
         return { ok: false, code: 'invalid', message: '智能体 ID 无效' }
@@ -68,6 +71,7 @@ export function apply(ctx) {
   connection.fetch.register({
     path: '/api/enterprise-agents/uninstall',
     methods: ['POST'],
+    requestBody: 'buffered',
     fetch: post((body) => typeof body.presetId === 'string' && body.presetId.length > 0
       ? store.uninstallAgent(body.presetId)
       : Promise.resolve({ ok: false, message: '智能体 ID 无效' }))
@@ -75,11 +79,13 @@ export function apply(ctx) {
   connection.fetch.register({
     path: '/api/enterprise-agents/local-presets',
     methods: ['GET'],
+    requestBody: 'buffered',
     fetch: async () => json(await store.listLocalPresets())
   })
   connection.fetch.register({
     path: '/api/enterprise-agents/upload',
     methods: ['POST'],
+    requestBody: 'buffered',
     fetch: post(async (body) => {
       if (typeof body.presetId !== 'string' || body.presetId.length === 0) {
         return { ok: false, code: 'invalid', message: '智能体 ID 无效' }
