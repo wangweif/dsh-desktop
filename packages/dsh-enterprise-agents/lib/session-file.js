@@ -84,8 +84,28 @@ async function apiRequest(session, fetchImpl, path, init, log) {
 }
 
 /**
+ * 流式请求：与 apiRequest 同一 cookie/401 语义，但不解析包络、不强制超时
+ * （超时与中止由调用方经 init.signal 控制），返回原始 Response 供逐块消费。
+ */
+async function apiStreamRequest(session, fetchImpl, path, init, log) {
+  let response
+  try {
+    response = await fetchImpl(`${session.serverUrl}${path}`, {
+      ...init,
+      headers: { cookie: session.sessionCookie, ...(init?.headers ?? {}) }
+    })
+  } catch (error) {
+    log(`[enterprise] api stream ${path} failed: ${errorMessage(error)}`)
+    return { status: 'unreachable' }
+  }
+  if (response.status === 401 || response.status === 403) return { status: 'unauthorized' }
+  if (!response.ok) return { status: 'unreachable' }
+  return { status: 'ok', response }
+}
+
+/**
  * 请求作用域 auth：handler 开头读一次会话，整个请求内 serverUrl/cookie 一致；
- * 未登录（session === null）时 apiGet/apiPost 直接 unauthorized，
+ * 未登录（session === null）时 apiGet/apiPost/apiStream 直接 unauthorized，
  * 与壳 EnterpriseAuth 无 cookie 的行为一致。
  */
 export function createScopedAuth(session, options = {}) {
@@ -95,6 +115,7 @@ export function createScopedAuth(session, options = {}) {
     return {
       apiGet: async () => ({ status: 'unauthorized' }),
       apiPost: async () => ({ status: 'unauthorized' }),
+      apiStream: async () => ({ status: 'unauthorized' }),
       getServerUrl: () => ''
     }
   }
@@ -105,6 +126,7 @@ export function createScopedAuth(session, options = {}) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body)
     }, log),
+    apiStream: (path, init) => apiStreamRequest(session, fetchImpl, path, init, log),
     getServerUrl: () => session.serverUrl
   }
 }

@@ -76,13 +76,14 @@ afterEach(() => {
 describe('nongkeEnterprise service', () => {
   it('exposes exactly the scoped-auth method surface', async () => {
     const harness = await createHarness()
-    expect(Object.keys(harness.service).sort()).toEqual(['apiGet', 'apiPost', 'getServerUrl'])
+    expect(Object.keys(harness.service).sort()).toEqual(['apiGet', 'apiPost', 'apiStream', 'getServerUrl'])
   })
 
   it('answers unauthorized and an empty server url when logged out', async () => {
     const harness = await createHarness()
     await expect(harness.service.apiGet('/api/agents')).resolves.toEqual({ status: 'unauthorized' })
     await expect(harness.service.apiPost('/api/agents', {})).resolves.toEqual({ status: 'unauthorized' })
+    await expect(harness.service.apiStream('/api/workbench/knowledge/ask', { method: 'POST' })).resolves.toEqual({ status: 'unauthorized' })
     await expect(harness.service.getServerUrl()).resolves.toBe('')
     expect(harness.calls).toHaveLength(0)
   })
@@ -145,5 +146,34 @@ describe('nongkeEnterprise service', () => {
       code: 404,
       message: '不存在'
     })
+  })
+
+  it('streams raw responses via apiStream with the cookie and caller init intact', async () => {
+    const stream = new Response('data: true\n\n\n', { headers: { 'content-type': 'text/event-stream' } })
+    const harness = await createHarness((url) => {
+      if (url.endsWith('/a-stream')) return stream
+      if (url.endsWith('/a-denied')) return new Response(null, { status: 403 })
+      if (url.endsWith('/a-down')) throw new Error('network unreachable')
+      return okEnvelope({})
+    })
+    await writeEnterpriseSessionHandoff(harness.dshHome, { serverUrl: SERVER, sessionCookie: COOKIE })
+    const signal = new AbortController().signal
+    const result = await harness.service.apiStream('/a-stream', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"question":"q"}',
+      signal
+    })
+    expect(result.status).toBe('ok')
+    if (result.status !== 'ok') throw new Error('unreachable')
+    await expect(result.response.text()).resolves.toBe('data: true\n\n\n')
+    const call = harness.calls.find(({ url }) => url === `${SERVER}/a-stream`)
+    expect(call?.init.method).toBe('POST')
+    expect(call?.init.signal).toBe(signal)
+    expect((call?.init.headers as Record<string, string>).cookie).toBe(COOKIE)
+    expect((call?.init.headers as Record<string, string>)['content-type']).toBe('application/json')
+    // 与 apiRequest 同一套状态语义：401/403 → unauthorized，网络失败 → unreachable
+    await expect(harness.service.apiStream('/a-denied', {})).resolves.toEqual({ status: 'unauthorized' })
+    await expect(harness.service.apiStream('/a-down', {})).resolves.toEqual({ status: 'unreachable' })
   })
 })

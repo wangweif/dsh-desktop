@@ -171,7 +171,8 @@ window.__ModuleLoader__.load({
 
     function KnowledgePanel() {
       const [datasets, setDatasets] = React.useState(null)
-      const [datasetsFailed, setDatasetsFailed] = React.useState(false)
+      // null=未失败；''=失败但无具体消息（显示通用文案）；其余为宿主半给的失败原因
+      const [datasetsError, setDatasetsError] = React.useState(null)
       const [selectedId, setSelectedId] = React.useState('')
       const [messages, setMessages] = React.useState([])
       const [question, setQuestion] = React.useState('')
@@ -181,13 +182,13 @@ window.__ModuleLoader__.load({
       const chatEndRef = React.useRef(null)
 
       const load = React.useCallback(async () => {
-        setDatasetsFailed(false)
+        setDatasetsError(null)
         try {
           const data = await api('/api/workbench-knowledge/datasets')
-          if (data.ok !== true) throw new Error(data.message)
+          if (data.ok !== true) throw new Error(typeof data.message === 'string' ? data.message : '')
           setDatasets(data.datasets)
-        } catch {
-          setDatasetsFailed(true)
+        } catch (error) {
+          setDatasetsError(error instanceof Error ? error.message : '')
         }
       }, [])
       React.useEffect(() => { void load() }, [load])
@@ -281,13 +282,13 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'wbkn-root' },
         h('h2', { className: 'wbkn-title' }, t('panelTitle')),
         h('p', { className: 'wbkn-hint' }, t('description')),
-        datasetsFailed
-          ? h('div', { className: 'wbkn-notice', role: 'alert' }, t('bridgeError'))
+        datasetsError !== null
+          ? h('div', { className: 'wbkn-notice', role: 'alert' }, datasetsError || t('bridgeError'))
           : null,
-        datasets === null && !datasetsFailed
+        datasets === null && datasetsError === null
           ? h('p', { className: 'wbkn-hint', 'aria-live': 'polite' }, t('loading'))
           : null,
-        datasetsFailed
+        datasetsError !== null
           ? h('button', { className: 'wbkn-send', type: 'button', onClick: () => { void load() } }, t('retry'))
           : null,
         Array.isArray(datasets) && datasets.length === 0

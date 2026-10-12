@@ -95,15 +95,13 @@
         root: !!js dshHomePath('doc-templates')
 
 # Built-in workbench on the dsh-desktop-workbenches container: knowledge
-# base Q&A against the Nongke Xiaozhi unified knowledge service (RAGFlow).
-# baseUrl/apiKey point at the intranet RAGFlow deployment; update them here
-# when the service moves.
+# base Q&A against the Nongke Xiaozhi unified knowledge service. The host
+# half rides the nongkeEnterprise login session; agent_platform holds the
+# RAGFlow key and proxies datasets + sessions/ask (its
+# routers/workbench_knowledge.py) — no service credentials ship with the app.
 - insert:
     - id: dsh-workbench-knowledge
       name: dsh-workbench-knowledge
-      config:
-        baseUrl: http://192.168.8.88:9380
-        apiKey: ragflow-cwZWU5YjBjMzUxODExZjBhNThhMDk2OD
 
 # Built-in workbench on the dsh-desktop-workbenches container: an internal
 # systems link list beside the native conversation. Links persist under the

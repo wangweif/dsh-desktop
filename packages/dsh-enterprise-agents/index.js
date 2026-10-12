@@ -100,6 +100,7 @@ export function apply(ctx) {
   ctx.effect(() => ctx.reflect.provide('nongkeEnterprise', {
     apiGet: (path) => scoped().then((auth) => auth.apiGet(path)),
     apiPost: (path, body) => scoped().then((auth) => auth.apiPost(path, body)),
+    apiStream: (path, init) => scoped().then((auth) => auth.apiStream(path, init)),
     getServerUrl: () => scoped().then((auth) => auth.getServerUrl())
   }), 'enterprise: nongke service')
 
