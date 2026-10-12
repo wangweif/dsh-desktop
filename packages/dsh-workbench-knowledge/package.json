@@ -1,0 +1,27 @@
+{
+  "name": "dsh-workbench-knowledge",
+  "version": "0.1.0",
+  "description": "Built-in workbench: Nongke Xiaozhi knowledge base (RAGFlow) Q&A panel on the dsh-desktop-workbenches container.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "dsh-desktop-workbenches",
+        "@deepseek-ai/dsh-client-locale"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  }
+}
