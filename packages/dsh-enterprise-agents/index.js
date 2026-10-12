@@ -94,6 +94,15 @@ export function apply(ctx) {
     })
   })
 
+  // nongkeEnterprise：认证复用服务（参考 WorkDSH 的 workdshEnterprise）。其他业务插件的
+  // 宿主半经 inject 消费，复用成员登录态调 agent_platform；方法面与 scoped auth 一致，
+  // 每调用现读交接文件（登出即 unauthorized），cookie/交接内容不出本进程。
+  ctx.effect(() => ctx.reflect.provide('nongkeEnterprise', {
+    apiGet: (path) => scoped().then((auth) => auth.apiGet(path)),
+    apiPost: (path, body) => scoped().then((auth) => auth.apiPost(path, body)),
+    getServerUrl: () => scoped().then((auth) => auth.getServerUrl())
+  }), 'enterprise: nongke service')
+
   const runSync = (session) => {
     if (session === null) return
     store.syncAgents(createScopedAuth(session, { log }))

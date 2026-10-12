@@ -21,6 +21,7 @@ interface RegisteredRoute {
 
 interface Harness {
   routes: Map<string, RegisteredRoute>
+  services: Map<string, unknown>
   presetRoot: string
   dshHome: string
 }
@@ -49,6 +50,7 @@ async function createHarness(platform: Array<Record<string, unknown>> = []): Pro
     return Response.json({ success: false, code: 500, message: `unexpected ${target}` }, { status: 200 })
   }) as typeof fetch
   process.env.DSH_HOME = dshHome
+  const services = new Map<string, unknown>()
   apply({
     connection: {
       fetch: {
@@ -57,12 +59,20 @@ async function createHarness(platform: Array<Record<string, unknown>> = []): Pro
         }
       }
     },
+    // cordis 最小面：effect 立即执行 setup 并透传 dispose；reflect.provide 收集服务。
+    effect: (setup: () => () => void) => setup(),
+    reflect: {
+      provide: (name: string, value: unknown) => {
+        services.set(name, value)
+        return () => services.delete(name)
+      }
+    },
     get: (name: string) => (name === 'agentPresets' ? { roots: [{ trust: 'user', path: presetRoot }] } : undefined)
   })
   ;(globalThis as Record<string, unknown>).__restoreEagFetch = () => {
     globalThis.fetch = originalFetch
   }
-  return { routes, presetRoot, dshHome }
+  return { routes, services, presetRoot, dshHome }
 }
 
 beforeEach(() => {
