@@ -20,8 +20,8 @@ const sessionStorage = {
   removeItem: key => sessionValues.delete(key),
   clear: () => sessionValues.clear()
 }
-// The Workbench feature is off by default; these behavior tests run as a user
-// who switched it on. The default itself is covered by its own test.
+// The Workbench feature is on by default (upstream #671 alignment); these
+// behavior tests run as a user who kept it on. The default itself has its own test.
 const WORKBENCH_ENABLED = 'dsh-workbench-enabled'
 const enabledStorage = {
   getItem: key => key === WORKBENCH_ENABLED ? 'true' : null,
@@ -2930,8 +2930,8 @@ describe('workbench feature default', () => {
     }
   }
 
-  it('keeps workbenches off until the user switches the feature on', async () => {
-    expect(await openError(undefined)).toBe('工作台功能已关闭。')
+  it('keeps workbenches on unless the user switches the feature off', async () => {
+    expect(await openError(undefined)).not.toBe('工作台功能已关闭。')
     expect(await openError('false')).toBe('工作台功能已关闭。')
     expect(await openError('true')).not.toBe('工作台功能已关闭。')
   })
