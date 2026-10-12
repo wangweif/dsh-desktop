@@ -93,3 +93,12 @@
       name: dsh-doc-templates
       config:
         root: !!js dshHomePath('doc-templates')
+
+# Built-in workbench on the dsh-desktop-workbenches container: an internal
+# systems link list beside the native conversation. Links persist under the
+# dshHome root (seeded on first read).
+- insert:
+    - id: dsh-workbench-internal
+      name: dsh-workbench-internal
+      config:
+        root: !!js dshHomePath('workbench-internal')
