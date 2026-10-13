@@ -23,6 +23,12 @@ window.__ModuleLoader__.load({
       empty: '平台上暂无可用智能体',
       retry: '重试',
       bridgeError: '服务不可用，请重启应用',
+      notLoggedIn: '尚未登录农科小智账号',
+      loginHint: '点击下方按钮，在弹出的浏览器中完成统一账号授权后自动返回。',
+      login: '登录农科小智账号',
+      loginPending: '等待浏览器完成授权…',
+      logout: '退出登录',
+      loggedInAs: '已登录',
       download: '下载',
       downloading: '安装中…',
       update: '更新',
@@ -76,6 +82,12 @@ window.__ModuleLoader__.load({
       uploadedAt: 'Uploaded',
       presetId: 'Local ID',
       unauthorized: 'Session expired. Go back and sign in again.',
+      notLoggedIn: 'Not signed in to Nongke Xiaozhi',
+      loginHint: 'Click the button below, finish the SSO authorization in the browser that opens, then return here.',
+      login: 'Sign in with Nongke Xiaozhi',
+      loginPending: 'Waiting for browser authorization…',
+      logout: 'Sign out',
+      loggedInAs: 'Signed in',
       model: 'Model',
       creator: 'Author',
       versionPrefix: 'v'
@@ -94,6 +106,15 @@ window.__ModuleLoader__.load({
       platform: () => api('/api/enterprise-agents/platform'),
       installed: () => api('/api/enterprise-agents/installed'),
       localPresets: () => api('/api/enterprise-agents/local-presets'),
+      session: () => api('/api/enterprise-agents/session'),
+      login: () => api('/api/enterprise-agents/login', {
+        method: 'POST',
+        body: JSON.stringify({})
+      }),
+      logout: () => api('/api/enterprise-agents/logout', {
+        method: 'POST',
+        body: JSON.stringify({})
+      }),
       download: (agentId) => api('/api/enterprise-agents/download', {
         method: 'POST',
         body: JSON.stringify({ agentId })
@@ -116,6 +137,10 @@ window.__ModuleLoader__.load({
 .eag-notice { margin: 0 0 14px; padding: 11px 13px; border-radius: 10px; font-size: 12px; line-height: 1.55; color: var(--dsw-alias-state-error-primary); background: var(--dsw-alias-interactive-bg-hover-danger); overflow-wrap: anywhere; }
 .eag-center { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 28px; color: var(--dsw-alias-label-secondary); font-size: 13px; text-align: center; }
 .eag-center-row { display: flex; gap: 9px; }
+.eag-center-row-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.eag-login-hint { color: var(--dsw-alias-label-caption); font-size: 11px; max-width: 360px; line-height: 1.6; }
+.eag-session-bar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 0 0 10px; }
+.eag-session-user { color: var(--dsw-alias-label-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .eag-section-title { margin: 22px 0 0; font-size: 13px; font-weight: 650; color: var(--dsw-alias-label-secondary); }
 .eag-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 16px; }
 .eag-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 14px; background: var(--dsw-alias-bg-module-platform); }
@@ -264,6 +289,18 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState({})
       // 卸载两步确认：当前确认中的 presetId（3s 后自动回退）
       const [confirmingId, setConfirmingId] = React.useState(null)
+      // 登录回路：loginPending 置位期间按钮转等待文案（回路最长阻塞 180s）
+      const [loginPending, setLoginPending] = React.useState(false)
+      const [session, setSession] = React.useState(null)
+
+      const refreshSession = React.useCallback(async () => {
+        try {
+          const result = await face.session()
+          setSession(result)
+        } catch {
+          setSession(null)
+        }
+      }, [])
 
       React.useEffect(() => {
         const timer = confirmingId === null ? null : window.setTimeout(() => setConfirmingId(null), 3000)
@@ -296,6 +333,37 @@ window.__ModuleLoader__.load({
       }, [t])
 
       React.useEffect(() => { void load() }, [load])
+      React.useEffect(() => { void refreshSession() }, [refreshSession])
+
+      const onLogin = async () => {
+        setErrorMessage(null)
+        setLoginPending(true)
+        try {
+          const result = await face.login()
+          if (result.ok) {
+            await refreshSession()
+            await load()
+          } else {
+            setErrorMessage(result.message ?? t('bridgeError'))
+          }
+        } catch (error) {
+          console.error(error)
+          setErrorMessage(t('bridgeError'))
+        } finally {
+          setLoginPending(false)
+        }
+      }
+
+      const onLogout = async () => {
+        setErrorMessage(null)
+        try {
+          await face.logout()
+        } catch (error) {
+          console.error(error)
+        }
+        setSession(null)
+        await load()
+      }
 
       const reloadInstalled = async () => {
         const result = await face.installed()
@@ -373,7 +441,17 @@ window.__ModuleLoader__.load({
       }
       if (view === 'unauthorized') {
         return h('div', { className: 'eag-page' },
-          h(CenterState, { label: t('unauthorized'), t, onRetry: () => void load() }))
+          errorMessage ? h('div', { className: 'eag-notice' }, errorMessage) : null,
+          h(CenterState, { label: t('notLoggedIn'), t }),
+          h('div', { className: 'eag-center-row-wrap' },
+            h('div', { className: 'eag-center-row' },
+              h('button', {
+                className: 'eag-btn primary',
+                type: 'button',
+                disabled: loginPending,
+                onClick: () => void onLogin()
+              }, loginPending ? t('loginPending') : t('login')),
+              loginPending ? null : h('div', { className: 'eag-login-hint' }, t('loginHint')))))
       }
       if (view === 'error') {
         return h('div', { className: 'eag-page' },
@@ -389,6 +467,16 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'eag-page' },
         h('h1', { className: 'eag-heading' }, t('heading')),
         h('p', { className: 'eag-hint' }, t('hint')),
+        session?.loggedIn
+          ? h('div', { className: 'eag-session-bar' },
+              h('span', { className: 'eag-session-user' },
+                `${t('loggedInAs')}: ${session.user?.nickname || session.user?.username || ''}`),
+              h('button', {
+                className: 'eag-btn',
+                type: 'button',
+                onClick: () => void onLogout()
+              }, t('logout')))
+          : null,
         h(ErrorBanner, { message: errorMessage, t, onRetry: () => void load() }),
         platformEmpty
           ? h(CenterState, { label: t('empty'), t })

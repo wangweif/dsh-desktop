@@ -1,6 +1,6 @@
 import { mkdirSync, watch } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { chmod, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, join, sep } from 'node:path'
 
 /**
  * Session handoff: the Electron shell owns login and safeStorage-encrypted
@@ -8,6 +8,9 @@ import { dirname, join } from 'node:path'
  * cookie to <DSH_HOME>/enterprise/agent-platform-session.json (0600, atomic).
  * This module reads that file lazily per request (no stale cache) and watches
  * the directory so the host half can re-run syncAgents on login/logout.
+ *
+ * Tauri 版新增：登录回路收口后由本插件自己写入（writeHandoffSession），
+ * 壳层不再参与——格式与原子写姿态和 Electron 壳的 session-handoff.ts 一致。
  */
 
 const REQUEST_TIMEOUT_MS = 10_000
@@ -21,6 +24,40 @@ function errorMessage(error) {
 export function sessionHandoffPath(dshHome = process.env.DSH_HOME) {
   if (!dshHome || typeof dshHome !== 'string') return null
   return join(dshHome, 'enterprise', HANDOFF_FILE)
+}
+
+/**
+ * 写交接文件（0600 + 同目录 tmp/rename 原子写）。session 为 null 时删除文件。
+ * 分隔符恒用 '/'：插件读取按 join()+split(sep).join('/') 同一约定，Windows 一致。
+ */
+export async function writeHandoffSession(session, options = {}) {
+  const path = sessionHandoffPath(options.dshHome)
+  if (path === null) throw new Error('enterprise: DSH_HOME is not available')
+  const normalized = path.split(sep).join('/')
+  if (session === null) {
+    await rm(normalized, { force: true }).catch(() => undefined)
+    return
+  }
+  const { serverUrl, sessionCookie } = session
+  if (typeof serverUrl !== 'string' || typeof sessionCookie !== 'string' || !serverUrl || !sessionCookie) {
+    throw new Error('enterprise: handoff session requires serverUrl and sessionCookie')
+  }
+  await mkdirSync(dirname(normalized), { recursive: true })
+  const temporary = `${normalized}.tmp`
+  await writeFile(temporary, `${JSON.stringify({ serverUrl, sessionCookie }, null, 2)}\n`, { mode: 0o600 })
+  await chmod(temporary, 0o600).catch(() => undefined)
+  try {
+    await rename(temporary, normalized)
+  } catch {
+    // Windows 上 rename 不能覆盖既有文件：删目标后重试（该窗口内非原子，与 Electron 版同姿态）
+    await rm(normalized, { force: true }).catch(() => undefined)
+    await rename(temporary, normalized)
+  }
+}
+
+/** 登出即删交接文件（幂等）。 */
+export async function removeHandoffSession(options = {}) {
+  await writeHandoffSession(null, options)
 }
 
 /** 现读交接文件；缺失/坏文件一律视为未登录（null）。 */

@@ -1,5 +1,6 @@
 import { EnterpriseAgentStore } from './lib/store.js'
-import { createScopedAuth, readHandoffSession, watchSessionHandoff } from './lib/session-file.js'
+import { createScopedAuth, readHandoffSession, removeHandoffSession, watchSessionHandoff } from './lib/session-file.js'
+import { openEnterpriseSsoLogin, DEFAULT_SERVER_URL } from './lib/sso-login.js'
 
 /**
  * Host half of the enterprise platform agents plugin. Routes mirror the
@@ -17,6 +18,8 @@ const INVALID_RESPONSE = () => Response.json(
 )
 
 const json = (data) => Response.json(data, { headers: { 'cache-control': 'no-store' } })
+
+const errorMessage = (error) => error instanceof Error ? `${error.name}: ${error.message}` : String(error)
 
 /** POST 载荷必须是 JSON 对象；字段校验沿用 store 的 invalid 语义。 */
 const post = (handler) => async (request) => {
@@ -44,6 +47,47 @@ export function apply(ctx) {
 
   /** 每请求现读交接文件：登出后不会带着旧 cookie 放行。 */
   const scoped = async () => createScopedAuth(await readHandoffSession(), { log })
+
+  // 登录回路（Tauri 版：壳零参与，host half 直接收口到交接文件）。
+  // login 长阻塞（等浏览器授权，上限 180s），由调用方设足够长的 fetch 超时。
+  connection.fetch.register({
+    path: '/api/enterprise-agents/login',
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: post(async (body) => {
+      const serverUrl = typeof body.serverUrl === 'string' && body.serverUrl.length > 0
+        ? body.serverUrl
+        : DEFAULT_SERVER_URL
+      try {
+        const result = await openEnterpriseSsoLogin({ serverUrl, log })
+        return { ok: true, serverUrl: result.serverUrl, username: result.username, nickname: result.nickname }
+      } catch (error) {
+        return { ok: false, code: 'login_failed', message: errorMessage(error) }
+      }
+    })
+  })
+  connection.fetch.register({
+    path: '/api/enterprise-agents/logout',
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: post(async () => {
+      await removeHandoffSession()
+      return { ok: true }
+    })
+  })
+  connection.fetch.register({
+    path: '/api/enterprise-agents/session',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: async () => {
+      const session = await readHandoffSession()
+      if (session === null) return json({ ok: true, loggedIn: false, serverUrl: DEFAULT_SERVER_URL })
+      const auth = createScopedAuth(session, { log })
+      const me = await auth.apiGet('/api/auth/me')
+      if (me.status !== 'ok') return json({ ok: true, loggedIn: false, serverUrl: session.serverUrl })
+      return json({ ok: true, loggedIn: true, serverUrl: session.serverUrl, user: me.data })
+    }
+  })
 
   connection.fetch.register({
     path: '/api/enterprise-agents/platform',
