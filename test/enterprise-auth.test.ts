@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_ENTERPRISE_SERVER_URL,
   EnterpriseAuth,
@@ -170,6 +170,8 @@ describe('EnterpriseAuth', () => {
     const offline = createFetchStub(() => Promise.reject(new TypeError('fetch failed')))
     const kept = new EnterpriseAuth({ storePath, fetchImpl: offline.fetch, codec: plainCodec })
     expect(await kept.restore()).toBeUndefined()
+    expect(kept.isAuthenticated()).toBe(false)
+    expect(kept.getUser()).toBeUndefined()
     const afterOffline = JSON.parse(await readFile(storePath, 'utf8')) as Record<string, unknown>
     expect(typeof afterOffline.sessionCookieEncrypted).toBe('string')
   })
@@ -185,6 +187,35 @@ describe('EnterpriseAuth', () => {
     const auth = new EnterpriseAuth({ storePath, fetchImpl: seeded.fetch, codec: brokenCodec })
     expect(await auth.restore()).toBeUndefined()
     expect(auth.isAuthenticated()).toBe(false)
+  })
+
+  it('only authenticates after the session handoff completes', async () => {
+    let releaseHandoff = () => {}
+    const handoff = new Promise<void>((resolve) => { releaseHandoff = resolve })
+    const onChange = vi.fn(() => handoff)
+    const auth = new EnterpriseAuth({
+      storePath: await tempStorePath(),
+      fetchImpl: createFetchStub(() => me()).fetch,
+      onChange
+    })
+    const login = auth.loginWithSessionCookie(SESSION_COOKIE)
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledOnce())
+    expect(auth.isAuthenticated()).toBe(false)
+    expect(auth.getUser()).toBeUndefined()
+    releaseHandoff()
+    await expect(login).resolves.toMatchObject({ ok: true })
+    expect(auth.isAuthenticated()).toBe(true)
+  })
+
+  it('does not authenticate when the session handoff fails', async () => {
+    const auth = new EnterpriseAuth({
+      storePath: await tempStorePath(),
+      fetchImpl: createFetchStub(() => me()).fetch,
+      onChange: async () => { throw new Error('handoff write failed') }
+    })
+    await expect(auth.loginWithSessionCookie(SESSION_COOKIE)).rejects.toThrow('handoff write failed')
+    expect(auth.isAuthenticated()).toBe(false)
+    expect(auth.getUser()).toBeUndefined()
   })
 
   it('logout clears local state even when the platform call fails', async () => {
@@ -321,7 +352,7 @@ describe('EnterpriseAuth.apiPost', () => {
     const auth = new EnterpriseAuth({
       storePath: await tempStorePath(),
       fetchImpl: stub.fetch,
-      onChange: (snapshot) => snapshots.push({ ...snapshot })
+      onChange: (snapshot) => { snapshots.push({ ...snapshot }) }
     })
 
     // 未登录前不触发（登录成功前无 persist）

@@ -116,29 +116,6 @@
       .unreachable-actions { display: none; gap: 9px; margin-top: 8px; }
       .unreachable-actions.visible { display: flex; }
       .unreachable-actions .button { flex: 1; }
-      .user-card { display: none; }
-      .user-card.visible { display: block; }
-      .user-head { display: flex; align-items: center; gap: 14px; margin: 4px 0 18px; }
-      .avatar {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 52px;
-        height: 52px;
-        border-radius: 50%;
-        color: #ffffff;
-        background: #2f6f4f;
-        font-size: 22px;
-        font-weight: 650;
-        flex: none;
-      }
-      .user-head .name { font-size: 17px; font-weight: 650; }
-      .user-head .role { margin-top: 3px; color: var(--muted); font-size: 12px; }
-      .rows { border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); }
-      .row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
-      .row:first-child { border-top: 0; }
-      .row .k { color: var(--muted); flex: none; }
-      .row .v { overflow-wrap: anywhere; text-align: right; }
       :root[data-theme="dark"] {
         --canvas: #141416;
         --surface: #202023;
@@ -201,18 +178,6 @@
           </div>
         </div>
 
-        <div class="user-card" id="view-user">
-          <h1>登录成功</h1>
-          <div class="user-head">
-            <span class="avatar" id="user-avatar"></span>
-            <div>
-              <div class="name" id="user-name"></div>
-              <div class="role" id="user-role"></div>
-            </div>
-          </div>
-          <div class="rows" id="user-rows"></div>
-          <button class="button primary" id="enter" type="button" style="margin-top:18px;">进入</button>
-        </div>
       </section>
     </main>
     <script>
@@ -226,7 +191,7 @@
         document.getElementById('badge').textContent = 'Platform sign-in'
         document.getElementById('heading').textContent = 'Sign in'
         document.getElementById('intro').textContent =
-          'Sign in with your Nongke Xiaozhi unified account and continue in the authorization window.'
+          'Complete sign-in in the authorization window to return to the client automatically.'
         document.getElementById('login').textContent = 'Sign in with Nongke Xiaozhi'
         document.getElementById('retry').textContent = 'Retry'
         document.getElementById('edit-server').textContent = 'Change server'
@@ -234,13 +199,6 @@
         document.getElementById('server-toggle').textContent = 'Server settings'
         document.getElementById('server-hint').textContent = 'agent_platform server address. Signing in again is required after changing it.'
         document.getElementById('save-server').textContent = 'Save'
-        document.getElementById('enter').textContent = 'Continue'
-      }
-
-      const ROLE_LABELS = {
-        super_admin: locale === 'zh' ? '系统管理员' : 'System admin',
-        tenant_admin: locale === 'zh' ? '租户管理员' : 'Tenant admin',
-        tenant_user: locale === 'zh' ? '租户用户' : 'Tenant user'
       }
       const notice = document.getElementById('notice')
       const showNotice = (text) => {
@@ -282,14 +240,18 @@
       const loginButton = document.getElementById('login')
       const unreachableActions = document.getElementById('unreachable-actions')
       const submit = async () => {
+        if (loginButton.disabled) return
         clearNotice()
         unreachableActions.classList.remove('visible')
         loginButton.disabled = true
         loginButton.textContent = locale === 'zh' ? '正在打开授权窗口…' : 'Opening sign-in window…'
+        let entering = false
         try {
           const result = await window.dshEnterprise.loginSso()
           if (result.ok) {
-            showUserCard(result.user)
+            entering = true
+            loginButton.textContent = locale === 'zh' ? '正在进入客户端…' : 'Returning to the client…'
+            return
           } else if (result.code !== 'cancelled') {
             showNotice(result.message)
             if (result.code === 'unreachable') unreachableActions.classList.add('visible')
@@ -298,9 +260,11 @@
           showNotice(locale === 'zh' ? '桌面桥不可用，请重启应用' : 'Desktop bridge unavailable')
           console.error(error)
         } finally {
-          loginButton.disabled = false
-          loginButton.textContent =
-            locale === 'zh' ? '农科小智统一账号登录' : 'Sign in with Nongke Xiaozhi'
+          if (!entering) {
+            loginButton.disabled = false
+            loginButton.textContent =
+              locale === 'zh' ? '农科小智统一账号登录' : 'Sign in with Nongke Xiaozhi'
+          }
         }
       }
       loginButton.addEventListener('click', submit)
@@ -311,43 +275,6 @@
         void window.dshEnterprise.quit()
       })
 
-      const displayName = (user) => (user.nickname || user.username) || '?'
-      const avatarLetter = (user) => {
-        const name = displayName(user).trim()
-        return name ? [...name][0].toUpperCase() : '?'
-      }
-      const showUserCard = (user) => {
-        document.getElementById('view-form').style.display = 'none'
-        const card = document.getElementById('view-user')
-        card.classList.add('visible')
-        document.getElementById('user-avatar').textContent = avatarLetter(user)
-        document.getElementById('user-name').textContent = displayName(user)
-        document.getElementById('user-role').textContent =
-          ROLE_LABELS[user.role] || user.role
-        const rows = [
-          [locale === 'zh' ? '用户名' : 'Username', user.username],
-          [locale === 'zh' ? '角色' : 'Role', ROLE_LABELS[user.role] || user.role],
-          user.email ? [locale === 'zh' ? '邮箱' : 'Email', user.email] : null,
-          user.tenantName ? [locale === 'zh' ? '租户' : 'Tenant', user.tenantName] : null
-        ].filter(Boolean)
-        const container = document.getElementById('user-rows')
-        container.textContent = ''
-        for (const [key, value] of rows) {
-          const row = document.createElement('div')
-          row.className = 'row'
-          const k = document.createElement('span')
-          k.className = 'k'
-          k.textContent = key
-          const v = document.createElement('span')
-          v.className = 'v'
-          v.textContent = String(value)
-          row.append(k, v)
-          container.appendChild(row)
-        }
-      }
-      document.getElementById('enter').addEventListener('click', () => {
-        void window.dshEnterprise.enter()
-      })
     </script>
   </body>
 </html>

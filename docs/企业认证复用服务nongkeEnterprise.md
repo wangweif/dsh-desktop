@@ -22,6 +22,7 @@
 interface NongkeEnterpriseService {
   apiGet(path: string): Promise<NongkeEnterpriseResult>
   apiPost(path: string, body: unknown): Promise<NongkeEnterpriseResult>
+  apiStream(path: string, init?: RequestInit): Promise<NongkeEnterpriseStreamResult>
   getServerUrl(): Promise<string>   // 未登录返回 ''
 }
 
@@ -31,7 +32,18 @@ interface NongkeEnterpriseResult {
   code?: number         // status === 'error' 时
   message?: string      // status === 'error' 时
 }
+
+type NongkeEnterpriseStreamResult =
+  | { status: 'ok'; response: Response }
+  | { status: 'unauthorized' }
+  | { status: 'unreachable' }
 ```
+
+`apiStream` 供知识库问答使用：宿主侧保留原始 `Response`，超时与取消由
+调用方通过 `init.signal` 控制。`dsh-workbench-knowledge` 调用平台
+`/api/workbench/knowledge/datasets` 和 `/api/workbench/knowledge/ask`，只向
+客户端返回知识库列表及 SSE 响应体；RAGFlow key 留在平台。流式接口的业务错误
+可能以 HTTP 200 JSON 返回，由知识库宿主路由解析，不能将其当作 SSE 成功。
 
 status 语义（与 `createScopedAuth`/壳 `EnterpriseAuth` 完全一致）：
 
@@ -73,7 +85,7 @@ ctx.inject(['nongkeEnterprise'], (ctx) => {
 
 ## 安全约束
 
-1. **服务不返回也不持有 cookie/token**：可枚举属性只有三个函数，每次调用内部
+1. **服务不返回也不持有 cookie/token**：可枚举属性只有四个函数，每次调用内部
    现读交接文件；交接文件内容（serverUrl 除外）不通过任何返回值离开宿主进程。
 2. **认证只在 harness Node 进程内携带**：cookie 头在 `createScopedAuth` 的
    `apiRequest` 内部追加，消费方无法触达。

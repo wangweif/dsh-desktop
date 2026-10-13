@@ -1217,13 +1217,13 @@ async function showEnterpriseLogin(): Promise<boolean> {
 }
 
 async function ensureEnterpriseAuthenticated(): Promise<boolean> {
-  if (!enterpriseAuth) return true
+  if (!enterpriseAuth) return false
   await enterpriseRestore
   if (enterpriseAuth.isAuthenticated()) return true
   enterpriseLoginGate ??= showEnterpriseLogin().finally(() => {
     enterpriseLoginGate = undefined
   })
-  return enterpriseLoginGate
+  return await enterpriseLoginGate && enterpriseAuth.isAuthenticated()
 }
 
 /**
@@ -1419,6 +1419,7 @@ function launchHarness(): Promise<void> {
   if (harnessLaunchOperation) return harnessLaunchOperation
 
   harnessLaunchOperation = (async () => {
+    if (!(await ensureEnterpriseAuthenticated())) return
     safeModeVisible = false
     runtime.beginLaunch('web profile')
     const dshHome = join(app.getPath('userData'), 'harness')
@@ -3323,11 +3324,7 @@ async function bootstrap(): Promise<void> {
     codec: safeStorageCodec(),
     log: (line) => console.warn(line),
     // 平台会话交接给 harness 插件 dsh-enterprise-agents（host 半以同一 cookie 调平台）
-    onChange: (snapshot) => {
-      void writeEnterpriseSessionHandoff(join(app.getPath('userData'), 'harness'), snapshot).catch((error) =>
-        console.warn(`[enterprise] session handoff write failed: ${error instanceof Error ? error.message : String(error)}`)
-      )
-    }
+    onChange: (snapshot) => writeEnterpriseSessionHandoff(dshHome, snapshot)
   })
   enterpriseAuth = enterprise
   // 静默恢复会话；失败（含平台不可达）不打断启动，由登录门禁兜底。

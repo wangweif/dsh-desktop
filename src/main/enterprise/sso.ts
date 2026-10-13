@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron'
 import type { EnterpriseLoginResult } from '../../shared/enterprise'
 import { SESSION_COOKIE_NAME, type EnterpriseAuth } from './auth'
 import { canGrantWindowPermission } from '../security-policy'
+import { enterpriseSsoFailureForUrl, isEnterpriseSsoNavigationAllowed } from './sso-policy'
 
 /**
  * 农科小智统一登录（SSO）授权窗口：借道 agent_platform 已落地的 OAuth2 授权码
@@ -40,7 +41,7 @@ async function readSessionCookie(
   serverUrl: string
 ): Promise<string | undefined> {
   const cookies = await win.webContents.session.cookies.get({
-    url: new URL(serverUrl).origin,
+    url: `${serverUrl}/api/auth/me`,
     name: SESSION_COOKIE_NAME
   })
   // EnterpriseAuth/snapshot/交接文件统一持有完整 cookie 对（name=value）
@@ -59,8 +60,8 @@ export interface EnterpriseSsoOptions {
 
 /**
  * 打开模态授权窗口并等待登录结果：成功返回用户；用户关窗返回 cancelled；
- * 平台不可达返回 unreachable。窗口在成功/不可达时自动关闭；会话被平台拒绝
- * （如账号禁用）时保留窗口，让用户在平台页面上重试或改用本地密码登录。
+ * 平台不可达返回 unreachable。平台未启用统一登录或授权被拒绝时返回明确失败；
+ * 不回退到平台本地密码登录。
  */
 export function openEnterpriseSsoLogin(options: EnterpriseSsoOptions): Promise<EnterpriseLoginResult> {
   const { auth, serverUrl, parent, locale = 'zh', backgroundColor } = options
@@ -88,28 +89,27 @@ export function openEnterpriseSsoLogin(options: EnterpriseSsoOptions): Promise<E
       if (settled) return
       settled = true
       if (!win.isDestroyed()) win.destroy()
+      if (result.ok && !parent.isDestroyed()) {
+        parent.show()
+        parent.focus()
+      }
       resolve(result)
     }
     // 授权流程无需任何弹窗/新窗口
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     win.webContents.on('will-attach-webview', (event) => event.preventDefault())
-    // 导航白名单：agent_platform 域 + 首个外域（/oauth/login 302 的 IdP）；
-    // 第三域一律拦下，避免授权页内外链把窗口带离登录流程
-    const allowedOrigins = new Set([new URL(serverUrl).origin])
-    win.webContents.on('will-navigate', (event, url) => {
-      let origin: string | null = null
-      try {
-        origin = new URL(url).origin
-      } catch {
-        // 无效 URL：拦截
-      }
-      if (origin !== null && allowedOrigins.has(origin)) return
-      if (origin !== null && allowedOrigins.size === 1) {
-        allowedOrigins.add(origin)
-        return
-      }
+    // 同时检查页面导航与 HTTP 重定向，只接受业务平台及已知的统一认证中心。
+    const guardNavigation = (event: Electron.Event, url: string): void => {
+      if (isEnterpriseSsoNavigationAllowed(serverUrl, url)) return
       event.preventDefault()
-    })
+      finish({
+        ok: false,
+        code: 'unknown',
+        message: locale === 'zh' ? '统一登录跳转地址不受信任，请联系平台管理员' : 'Untrusted SSO redirect. Contact the platform administrator.'
+      })
+    }
+    win.webContents.on('will-navigate', guardNavigation)
+    win.webContents.on('will-redirect', guardNavigation)
     win.webContents.session.setPermissionCheckHandler(
       (_webContents, permission, requestingOrigin, details) =>
         canGrantWindowPermission(
@@ -129,14 +129,19 @@ export function openEnterpriseSsoLogin(options: EnterpriseSsoOptions): Promise<E
       if (!win.isDestroyed()) win.show()
     })
     win.on('closed', () => finish({ ok: false, code: 'cancelled', message: '已取消登录' }))
-    // 登录成功（或平台本地密码登录成功）都会 302 到落地页：提 cookie → 验证 → 收窗
+    // 登录成功后 302 到落地页：提 cookie → 验证 → 收窗
     win.webContents.on('did-navigate', (_event, url) => {
+      const failure = enterpriseSsoFailureForUrl(serverUrl, url, locale)
+      if (failure) {
+        finish(failure)
+        return
+      }
       if (!isPostLoginLandingUrl(serverUrl, url)) return
       void (async () => {
         try {
           const cookie = await readSessionCookie(win, serverUrl)
           if (!cookie) {
-            log(`[enterprise] sso landing ${url} carried no session cookie`)
+            log('[enterprise] sso landing carried no session cookie')
             return
           }
           const result = await auth.loginWithSessionCookie(cookie)
@@ -144,7 +149,7 @@ export function openEnterpriseSsoLogin(options: EnterpriseSsoOptions): Promise<E
             log(`[enterprise] sso login ok for ${result.user.username}`)
             finish(result)
           } else {
-            // 会话被平台拒绝：留在窗口内让用户重试（/login?oauth_error= 等页面仍可操作）
+            // 不误报登录成功；用户可关窗后重新发起授权。
             log(`[enterprise] sso session rejected: ${result.code}`)
           }
         } catch (error) {

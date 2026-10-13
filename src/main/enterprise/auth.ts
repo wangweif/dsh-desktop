@@ -38,9 +38,9 @@ export interface EnterpriseAuthOptions {
   /**
    * 每次 #persist 成功后的会话快照（login 成功/登出/换服务器/恢复失效）。
    * 壳用它把明文会话写入 DSH_HOME 交接文件，供 harness 插件（dsh-enterprise-agents）
-   * 调平台接口。fire-and-forget：openHarness 在门禁之后启动，写入余量充足。
+   * 调平台接口。等待交接完成后才允许登录/恢复成功，避免启动时读取旧凭据。
    */
-  onChange?: (snapshot: EnterpriseAuthSnapshot) => void
+  onChange?: (snapshot: EnterpriseAuthSnapshot) => void | Promise<void>
 }
 
 /** 交接给 harness 插件的会话快照；sessionCookie 缺失表示未登录。 */
@@ -112,10 +112,11 @@ export class EnterpriseAuth {
   readonly #fetchImpl: typeof fetch
   readonly #codec: EnterpriseCredentialCodec | undefined
   readonly #log: (line: string) => void
-  readonly #onChange: ((snapshot: EnterpriseAuthSnapshot) => void) | undefined
+  readonly #onChange: ((snapshot: EnterpriseAuthSnapshot) => void | Promise<void>) | undefined
   #serverUrl = DEFAULT_ENTERPRISE_SERVER_URL
   #sessionCookie: string | undefined
   #user: EnterpriseUser | undefined
+  #authenticated = false
 
   constructor(options: EnterpriseAuthOptions) {
     this.#storePath = options.storePath
@@ -130,7 +131,7 @@ export class EnterpriseAuth {
   }
 
   getUser(): EnterpriseUser | undefined {
-    return this.#user
+    return this.isAuthenticated() ? this.#user : undefined
   }
 
   /**
@@ -200,7 +201,7 @@ export class EnterpriseAuth {
   }
 
   isAuthenticated(): boolean {
-    return this.#sessionCookie !== undefined && this.#user !== undefined
+    return this.#authenticated && this.#sessionCookie !== undefined && this.#user !== undefined
   }
 
   async setServerUrl(rawUrl: string): Promise<EnterpriseServerUrlResult> {
@@ -215,6 +216,7 @@ export class EnterpriseAuth {
     }
     const next = parsed.toString().replace(/\/+$/, '')
     this.#serverUrl = next
+    this.#authenticated = false
     // 会话属于旧地址，直接作废，回到登录页重新认证
     this.#sessionCookie = undefined
     this.#user = undefined
@@ -224,10 +226,14 @@ export class EnterpriseAuth {
   }
 
   async restore(): Promise<EnterpriseUser | undefined> {
+    this.#authenticated = false
     const store = await this.#loadStore()
     if (typeof store.serverUrl === 'string' && store.serverUrl) this.#serverUrl = store.serverUrl
     if (isEnterpriseUser(store.user)) this.#user = store.user
-    if (typeof store.sessionCookieEncrypted !== 'string') return undefined
+    if (typeof store.sessionCookieEncrypted !== 'string') {
+      await this.#onChange?.({ serverUrl: this.#serverUrl })
+      return undefined
+    }
     const cookie = this.#decrypt(store.sessionCookieEncrypted)
     if (cookie === undefined) {
       this.#sessionCookie = undefined
@@ -240,6 +246,7 @@ export class EnterpriseAuth {
     if (check.status === 'ok') {
       this.#user = check.user
       await this.#persist()
+      this.#authenticated = true
       return check.user
     }
     if (check.status === 'unauthorized') {
@@ -248,7 +255,10 @@ export class EnterpriseAuth {
       await this.#persist()
       return undefined
     }
-    // 平台不可达：保留 cookie 与缓存用户，下次启动再试；本次按未登录处理
+    // 平台不可达：磁盘凭据留待下次启动重试，内存不得放行登录门禁。
+    this.#sessionCookie = undefined
+    this.#user = undefined
+    await this.#onChange?.({ serverUrl: this.#serverUrl })
     return undefined
   }
 
@@ -261,15 +271,26 @@ export class EnterpriseAuth {
     if (!cookie) return { ok: false, code: 'unknown', message: '登录响应缺少会话凭证' }
     const previousCookie = this.#sessionCookie
     const previousUser = this.#user
+    const previousAuthenticated = this.#authenticated
+    this.#authenticated = false
     this.#sessionCookie = cookie
     const check = await this.#requestSessionUser()
     if (check.status === 'ok') {
       this.#user = check.user
-      await this.#persist()
+      try {
+        await this.#persist()
+      } catch (error) {
+        this.#sessionCookie = previousCookie
+        this.#user = previousUser
+        this.#authenticated = previousAuthenticated
+        throw error
+      }
+      this.#authenticated = true
       return { ok: true, user: check.user }
     }
     this.#sessionCookie = previousCookie
     this.#user = previousUser
+    this.#authenticated = previousAuthenticated
     if (check.status === 'unreachable') {
       this.#log('[enterprise] sso session check unreachable')
       return {
@@ -283,6 +304,7 @@ export class EnterpriseAuth {
 
   async logout(): Promise<void> {
     const cookie = this.#sessionCookie
+    this.#authenticated = false
     this.#sessionCookie = undefined
     this.#user = undefined
     await this.#persist()
@@ -328,7 +350,7 @@ export class EnterpriseAuth {
     }
     if (this.#user) store.user = this.#user
     await atomicWriteJson(this.#storePath, store)
-    this.#onChange?.({ serverUrl: this.#serverUrl, sessionCookie: this.#sessionCookie })
+    await this.#onChange?.({ serverUrl: this.#serverUrl, sessionCookie: this.#sessionCookie })
   }
 
   async #loadStore(): Promise<EnterpriseStore> {

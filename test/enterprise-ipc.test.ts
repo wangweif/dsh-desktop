@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { registerEnterpriseHandlers, type EnterpriseIpcDeps, type EnterpriseIpcEvent } from '../src/main/enterprise/ipc'
 import type { EnterpriseAuth } from '../src/main/enterprise/auth'
+import type { EnterpriseLoginResult } from '../src/shared/enterprise'
 
 type Handler = (event: EnterpriseIpcEvent, ...args: unknown[]) => unknown
 
@@ -22,6 +23,7 @@ function createDeps(overrides: Partial<EnterpriseIpcDeps> = {}): EnterpriseIpcDe
   return {
     auth: {
       getUser: () => undefined,
+      isAuthenticated: () => true,
       logout: async () => calls.push('logout'),
       getServerUrl: () => 'http://localhost:3002',
       setServerUrl: async () => ({ ok: true })
@@ -77,6 +79,39 @@ describe('registerEnterpriseHandlers', () => {
     registerEnterpriseHandlers(registrar, deps)
     const loginSso = registrar.handlers.get('enterprise:login-sso') as Handler
     await expect(loginSso(trustedEvent)).resolves.toMatchObject({ ok: false, code: 'cancelled' })
+    expect(deps.calls).toEqual([])
+  })
+
+  it('automatically enters the client after a verified SSO login', async () => {
+    const registrar = createRegistrar()
+    const deps = createDeps()
+    registerEnterpriseHandlers(registrar, deps)
+    await expect((registrar.handlers.get('enterprise:login-sso') as Handler)(trustedEvent))
+      .resolves.toMatchObject({ ok: true })
+    expect(deps.calls).toEqual(['sso', 'enter'])
+  })
+
+  it('does not enter the client when the session is not ready after SSO', async () => {
+    const registrar = createRegistrar()
+    const deps = createDeps()
+    deps.auth.isAuthenticated = () => false
+    registerEnterpriseHandlers(registrar, deps)
+    await expect((registrar.handlers.get('enterprise:login-sso') as Handler)(trustedEvent))
+      .resolves.toMatchObject({ ok: false })
+    expect(deps.calls).toEqual(['sso'])
+  })
+
+  it('waits for SSO completion before entering the client', async () => {
+    const registrar = createRegistrar()
+    let complete: (result: EnterpriseLoginResult) => void = () => {}
+    const pending = new Promise<EnterpriseLoginResult>((resolve) => { complete = resolve })
+    const deps = createDeps({ onSsoLogin: () => pending })
+    registerEnterpriseHandlers(registrar, deps)
+    const login = (registrar.handlers.get('enterprise:login-sso') as Handler)(trustedEvent)
+    expect(deps.calls).toEqual([])
+    complete(await createDeps().onSsoLogin())
+    await login
+    expect(deps.calls).toEqual(['enter'])
   })
 
   it('validates set-server-url input', async () => {
@@ -103,5 +138,14 @@ describe('registerEnterpriseHandlers', () => {
     await (registrar.handlers.get('enterprise:enter') as Handler)(trustedEvent)
     await (registrar.handlers.get('enterprise:quit') as Handler)(trustedEvent)
     expect(deps.calls).toEqual(['enter', 'quit'])
+  })
+
+  it('does not enter when a trusted window has no authenticated session', async () => {
+    const registrar = createRegistrar()
+    const deps = createDeps()
+    deps.auth.isAuthenticated = () => false
+    registerEnterpriseHandlers(registrar, deps)
+    expect(await (registrar.handlers.get('enterprise:enter') as Handler)(trustedEvent)).toEqual({ ok: false })
+    expect(deps.calls).toEqual([])
   })
 })

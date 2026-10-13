@@ -37,7 +37,13 @@ export function registerEnterpriseHandlers(
 
   ipc.handle('enterprise:login-sso', async (event) => {
     guard(event)
-    return deps.onSsoLogin()
+    const result = await deps.onSsoLogin()
+    if (!result.ok) return result
+    if (!deps.auth.isAuthenticated()) {
+      return { ok: false as const, code: 'unknown' as const, message: '授权会话无效或已过期，请重新登录' }
+    }
+    deps.onEnter()
+    return result
   })
 
   ipc.handle('enterprise:get-user', (event) => {
@@ -69,6 +75,7 @@ export function registerEnterpriseHandlers(
 
   ipc.handle('enterprise:enter', (event) => {
     guard(event)
+    if (!deps.auth.isAuthenticated()) return { ok: false as const }
     deps.onEnter()
     return { ok: true as const }
   })
