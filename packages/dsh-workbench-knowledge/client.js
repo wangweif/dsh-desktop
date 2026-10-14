@@ -58,7 +58,9 @@ window.__ModuleLoader__.load({
 
     /**
      * 消费 host 半透传的 RAGFlow SSE：每帧 "data: {code,data}"，data 为 true
-     * 表示结束，data.answer 为增量文本，data.reference.chunks 为参考文档。
+     * 表示结束，data.reference.chunks 为参考文档。data.answer 为**累积快照**
+     * （每帧都是到当前为止的完整文本；2026-10-14 内网实测 RAGFlow 行为，
+     * 官方接口示例的增量语义不成立），故渲染侧用整体替换而非追加。
      * 返回 {aborted} 供取消路径区分正常完成。
      */
     async function consumeAskStream(response, onEvent, signal) {
@@ -127,6 +129,13 @@ window.__ModuleLoader__.load({
         refs.push({ name, similarity })
       }
       return refs
+    }
+
+    // 思考模型的推理过程包在 answer 开头的 <think>…</think> 里随快照累积；
+    // 面板只展示正文，思考期间（剥掉 think 后为空）由 asking 文案占位。
+    // 快照帧里闭合标签始终在场；流中断时以行首 <think> 起整段视为思考中。
+    function answerBody(answer) {
+      return answer.replace(/^<think>[\s\S]*?(?:<\/think>|$)/, '').replace(/^\s+/, '')
     }
 
     // 全部样式走 --dsw-alias-* 主题变量；.wbkn- 前缀防碰撞。
@@ -238,7 +247,7 @@ window.__ModuleLoader__.load({
             if (event.type === 'delta') {
               const patch = {}
               if (typeof event.data.answer === 'string' && event.data.answer.length > 0) {
-                patch.answer = (last) => last + event.data.answer
+                patch.answer = event.data.answer
               }
               const refs = referenceChunks(event.data.reference)
               if (refs.length > 0) patch.refs = refs
@@ -249,7 +258,7 @@ window.__ModuleLoader__.load({
                 const previous = next[next.length - 1]
                 next[next.length - 1] = {
                   ...previous,
-                  answer: typeof patch.answer === 'function' ? patch.answer(previous.answer) : previous.answer,
+                  answer: patch.answer ?? previous.answer,
                   refs: patch.refs ?? previous.refs
                 }
                 return next
@@ -310,12 +319,15 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wbkn-chat', 'aria-live': 'polite' },
           messages.length === 0
             ? h('div', { className: 'wbkn-empty' }, t('pickPlaceholder'))
-            : messages.map((message, index) => h('div', { className: 'wbkn-msg', key: index },
-              h('div', { className: 'wbkn-q' }, message.question),
-              h('div', { className: `wbkn-a${message.streaming ? ' wbkn-partial' : ''}` },
-                message.answer.length > 0 ? message.answer : (message.streaming ? t('asking') : ''),
-                message.error !== null ? h('span', { className: 'wbkn-notice', role: 'alert' }, message.error) : null),
-              h(References, { refs: message.refs }))),
+            : messages.map((message, index) => {
+              const body = answerBody(message.answer)
+              return h('div', { className: 'wbkn-msg', key: index },
+                h('div', { className: 'wbkn-q' }, message.question),
+                h('div', { className: `wbkn-a${message.streaming ? ' wbkn-partial' : ''}` },
+                  body.length > 0 ? body : (message.streaming ? t('asking') : ''),
+                  message.error !== null ? h('span', { className: 'wbkn-notice', role: 'alert' }, message.error) : null),
+                h(References, { refs: message.refs }))
+            }),
           h('div', { ref: chatEndRef })),
         h('div', { className: 'wbkn-ask' },
           h('input', {
